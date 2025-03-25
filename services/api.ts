@@ -1,4 +1,4 @@
-// services/api.ts - Cliente para conectar com a API backend (VERSÃO CORRIGIDA)
+// services/api.ts - Cliente para conectar com a API backend (VERSÃO CORRIGIDA COMPLETA)
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfoMock from '../utils/netInfoMock';
@@ -6,24 +6,9 @@ import NetInfoMock from '../utils/netInfoMock';
 // Usar o mock em vez da importação real
 const NetInfo = NetInfoMock;
 
-// CONFIGURAÇÃO: Modifique estas variáveis
-// ATENÇÃO: Substitua pelo IP real da sua máquina na rede
-// Use o IP que outros dispositivos usam para acessar seu computador
-const DEFAULT_SERVER_IP = '192.168.1.85'; // ⚠️ ALTERE PARA SEU IP REAL!
+// CONFIGURAÇÃO
+// Porta padrão da API Go
 const DEFAULT_PORT = '8080';
-
-// Função para obter a URL da API
-const getApiUrl = async () => {
-  try {
-    // Tentar ler o IP das configurações salvas primeiro
-    const serverIp = await AsyncStorage.getItem('@server_ip') || DEFAULT_SERVER_IP;
-    const serverPort = await AsyncStorage.getItem('@server_port') || DEFAULT_PORT;
-    return `http://${serverIp}:${serverPort}/api`;
-  } catch (error) {
-    console.log('[API] Erro ao obter configuração do servidor:', error);
-    return `http://${DEFAULT_SERVER_IP}:${DEFAULT_PORT}/api`;
-  }
-};
 
 // DEBUG: Ative para mais informações nos logs
 const DEBUG = true;
@@ -97,39 +82,61 @@ export interface ProdutoView {
   quantidade: number;
 }
 
-// Flag para controlar o modo offline
+// Variáveis de estado de conexão
 let modoOffline = true; // Inicia como offline até confirmar conexão
+let servidorAtual = ''; // IP do servidor atual que está funcionando
+let portaAtual = DEFAULT_PORT;
+let lastDetectedServer = ''; // Último servidor detectado com sucesso
+let servidorDetectionInProgress = false;
 
 // Status da conexão
 export const getStatusConexao = () => {
   return !modoOffline;
 };
 
-// Verificar status da conexão
-export const verificarConexao = async (): Promise<boolean> => {
+// Função para obter a URL da API
+const getApiUrl = async () => {
   try {
-    // Verificar se temos conectividade de internet primeiro
-    const netInfoState = await NetInfo.fetch();
-    // FIX: Garantir que isConnected é um boolean
-    const isConnected: boolean = typeof netInfoState.isConnected === 'string'
-      ? netInfoState.isConnected === 'true'
-      : Boolean(netInfoState.isConnected);
-      
-    if (!isConnected) {
-      log('Sem conexão com a internet, modo offline ativado');
-      modoOffline = true;
-      return false;
+    // Se temos um servidor detectado e funcionando, use-o
+    if (servidorAtual && portaAtual) {
+      return `http://${servidorAtual}:${portaAtual}/api`;
     }
-
-    const apiUrl = await getApiUrl();
-    log(`Verificando conexão com o servidor em: ${apiUrl}`);
     
-    // Adicionar timeout para não travar em casos de servidor indisponível
+    // Tentar ler o IP das configurações salvas
+    const serverIp = await AsyncStorage.getItem('@server_ip');
+    const serverPort = await AsyncStorage.getItem('@server_port') || DEFAULT_PORT;
+    
+    if (serverIp) {
+      servidorAtual = serverIp;
+      portaAtual = serverPort;
+      return `http://${serverIp}:${serverPort}/api`;
+    }
+    
+    // Se não temos servidor configurado, e já temos um último detectado, use-o
+    if (lastDetectedServer) {
+      servidorAtual = lastDetectedServer;
+      return `http://${lastDetectedServer}:${portaAtual}/api`;
+    }
+    
+    // Caso não tenhamos um servidor configurado, iniciar detecção automática na próxima verificação
+    return `http://auto-detect:${portaAtual}/api`;
+  } catch (error) {
+    console.log('[API] Erro ao obter configuração do servidor:', error);
+    return `http://auto-detect:${portaAtual}/api`;
+  }
+};
+
+// Função para testar conexão com um servidor específico
+const testServerConnection = async (ip: string, port: string, timeout = 2000): Promise<boolean> => {
+  try {
+    log(`Testando servidor em: ${ip}:${port}`);
+    
+    // Criar um controller para timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
     
     // Tentar fazer uma requisição simples
-    const response = await fetch(`${apiUrl}/produtos?limit=1`, {
+    const response = await fetch(`http://${ip}:${port}/api/produtos?limit=1`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -139,25 +146,236 @@ export const verificarConexao = async (): Promise<boolean> => {
     
     clearTimeout(timeoutId);
     
-    // Logar detalhes da resposta para diagnóstico
-    log('Resposta do servidor:', {
-      status: response.status,
-      statusText: response.statusText,
-      ok: response.ok
-    });
-    
-    // Se a requisição foi bem-sucedida, estamos online
-    const novoModoOffline = !response.ok;
-    modoOffline = novoModoOffline;
-    
-    if (!modoOffline) {
-      log('✅ Conexão estabelecida com o servidor!');
-      await AsyncStorage.setItem('@ultimo_acesso_online', new Date().toISOString());
-    } else {
-      log('❌ Falha na conexão com o servidor, resposta não OK');
+    // Se conseguiu conectar, armazenar como último servidor detectado
+    if (response.ok) {
+      log(`✅ Servidor encontrado e respondendo em ${ip}:${port}`);
+      lastDetectedServer = ip;
+      servidorAtual = ip;
+      portaAtual = port;
+      
+      // Salvar configuração para uso futuro
+      await AsyncStorage.setItem('@server_ip', ip);
+      await AsyncStorage.setItem('@server_port', port);
+      
+      return true;
     }
     
-    return !modoOffline;
+    log(`❌ Servidor em ${ip}:${port} respondeu, mas com erro: ${response.status}`);
+    return false;
+  } catch (error) {
+    // Ignorar erros de timeout (AbortError) - é esperado quando testando IPs que não respondem
+    if (error instanceof Error && error.name !== 'AbortError') {
+      log(`Erro ao testar servidor ${ip}:${port}: ${error.message}`);
+    }
+    return false;
+  }
+};
+
+// Função para escanear toda a rede em busca do servidor
+const scanNetwork = async (networkPrefix: string): Promise<boolean> => {
+  log(`Escaneando rede ${networkPrefix}.* em busca do servidor...`);
+  
+  // Escanear os IPs mais prováveis primeiro (geralmente roteadores e servidores)
+  const priorityIPs = [1, 2, 3, 4, 5, 100, 101, 150, 200, 254];
+  
+  for (const lastOctet of priorityIPs) {
+    const ip = `${networkPrefix}.${lastOctet}`;
+    const connected = await testServerConnection(ip, DEFAULT_PORT, 1000);
+    if (connected) return true;
+  }
+  
+  // Criar batches de IPs para processar em paralelo para agilizar a descoberta
+  // mas sem sobrecarregar a rede ou o dispositivo
+  const batchSize = 10;
+  const startingBatch = 1;
+  const endingBatch = 25; // Cobrir 250 IPs em batches
+  
+  for (let batchStart = startingBatch; batchStart <= endingBatch; batchStart++) {
+    const batchPromises = [];
+    
+    // Criar um batch de promessas de teste de conexão
+    for (let i = 0; i < batchSize; i++) {
+      const lastOctet = (batchStart - 1) * batchSize + i + 1;
+      if (lastOctet > 254 || priorityIPs.includes(lastOctet)) continue; // Pular IPs já testados ou inválidos
+      
+      const ip = `${networkPrefix}.${lastOctet}`;
+      batchPromises.push(testServerConnection(ip, DEFAULT_PORT, 800));
+    }
+    
+    // Executar este batch em paralelo
+    const results = await Promise.all(batchPromises);
+    
+    // Se algum teste conectou, retornar sucesso
+    if (results.some(result => result === true)) {
+      return true;
+    }
+  }
+  
+  return false;
+};
+
+// Função para detectar o servidor automaticamente na rede
+const detectarServidorAutomatico = async (): Promise<boolean> => {
+  if (servidorDetectionInProgress) {
+    log('Detecção de servidor já está em andamento');
+    return false;
+  }
+  
+  try {
+    servidorDetectionInProgress = true;
+    log('Iniciando detecção automática de servidores...');
+    
+    // Primeiro, tentar usar o servidor salvo anteriormente
+    if (lastDetectedServer) {
+      log(`Tentando reconectar ao último servidor conhecido: ${lastDetectedServer}`);
+      const conectado = await testServerConnection(lastDetectedServer, DEFAULT_PORT);
+      if (conectado) {
+        log(`Reconectado ao servidor anterior: ${lastDetectedServer}`);
+        servidorDetectionInProgress = false;
+        return true;
+      }
+    }
+    
+    // Tentar obter o IP do próprio dispositivo
+    const netInfo = await NetInfo.fetch();
+    if (netInfo.details && 'ipAddress' in netInfo.details) {
+      const deviceIp = netInfo.details.ipAddress;
+      if (deviceIp) {
+        log(`IP do dispositivo: ${deviceIp}, detectando servidores na mesma rede`);
+        
+        // Extrair o prefixo da rede (primeiros 3 octetos do IP)
+        const ipParts = deviceIp.split('.');
+        if (ipParts.length === 4) {
+          const networkPrefix = `${ipParts[0]}.${ipParts[1]}.${ipParts[2]}`;
+          
+          // Escanear toda a rede
+          const serverEncontrado = await scanNetwork(networkPrefix);
+          
+          if (serverEncontrado) {
+            log(`Servidor encontrado e salvo: ${servidorAtual}:${portaAtual}`);
+            servidorDetectionInProgress = false;
+            return true;
+          }
+        }
+      }
+    }
+    
+    // Redes comuns para tentar caso não tenha informações de IP
+    const commonNetworks = ['192.168.1', '192.168.0', '10.0.0', '10.0.1', '172.16.0'];
+    
+    for (const network of commonNetworks) {
+      log(`Tentando rede comum: ${network}.*`);
+      const serverEncontrado = await scanNetwork(network);
+      if (serverEncontrado) {
+        log(`Servidor encontrado em rede comum: ${servidorAtual}:${portaAtual}`);
+        servidorDetectionInProgress = false;
+        return true;
+      }
+    }
+    
+    log('Detecção automática finalizada: nenhum servidor encontrado');
+    servidorDetectionInProgress = false;
+    return false;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log('Erro na detecção automática:', errorMessage);
+    servidorDetectionInProgress = false;
+    return false;
+  }
+};
+
+// Verificar status da conexão
+export const verificarConexao = async (): Promise<boolean> => {
+  try {
+    // Verificar se temos conectividade de internet primeiro
+    const netInfoState = await NetInfo.fetch();
+    // Garantir que isConnected é um boolean
+    const isConnected: boolean = typeof netInfoState.isConnected === 'string'
+      ? netInfoState.isConnected === 'true'
+      : Boolean(netInfoState.isConnected);
+      
+    if (!isConnected) {
+      log('Sem conexão com a internet, modo offline ativado');
+      modoOffline = true;
+      return false;
+    }
+    
+    log('Conexão com internet detectada, verificando servidor...');
+    
+    // Obter URL da API configurada
+    let apiUrl = await getApiUrl();
+    
+    // Se for modo de detecção automática
+    if (apiUrl.includes('auto-detect')) {
+      log('Modo de detecção automática ativado, procurando servidor na rede...');
+      const servidorEncontrado = await detectarServidorAutomatico();
+      
+      if (servidorEncontrado) {
+        apiUrl = await getApiUrl(); // Obter a nova URL após a detecção
+      } else {
+        log('Nenhum servidor encontrado automaticamente');
+        modoOffline = true;
+        return false;
+      }
+    }
+    
+    log(`Verificando conexão com o servidor em: ${apiUrl}`);
+    
+    // Adicionar timeout para não travar em casos de servidor indisponível
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
+    // Tentar fazer uma requisição simples
+    try {
+      const response = await fetch(`${apiUrl}/produtos?limit=1`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      // Logar detalhes da resposta para diagnóstico
+      log('Resposta do servidor:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok
+      });
+      
+      // Se a requisição foi bem-sucedida, estamos online
+      const novoModoOffline = !response.ok;
+      modoOffline = novoModoOffline;
+      
+      if (!modoOffline) {
+        log('✅ Conexão estabelecida com o servidor!');
+        await AsyncStorage.setItem('@ultimo_acesso_online', new Date().toISOString());
+      } else {
+        log('❌ Falha na conexão com o servidor, resposta não OK');
+      }
+      
+      return !modoOffline;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      
+      // Se o erro for de abort (timeout), tentar novamente com detecção automática
+      if (error instanceof Error && error.name === 'AbortError') {
+        log('⚠️ Timeout ao conectar com o servidor configurado, tentando detecção automática...');
+        const servidorEncontrado = await detectarServidorAutomatico();
+        
+        if (servidorEncontrado) {
+          // Tentar conectar novamente com o servidor recém-detectado
+          return await verificarConexao();
+        }
+      }
+      
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log('❌ Erro ao verificar conexão:', errorMessage);
+      modoOffline = true;
+      log('Modo offline ativado devido ao erro de conexão');
+      return false;
+    }
   } catch (error) {
     // Se houve erro, estamos offline
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -223,20 +441,34 @@ export const getProdutos = async (): Promise<Produto[]> => {
     
     // Fazer requisição à API
     const apiUrl = await getApiUrl();
-    const response = await fetch(`${apiUrl}/produtos`);
     
-    if (!response.ok) {
-      throw new Error(`Erro ao buscar produtos: ${response.status} ${response.statusText}`);
+    // Adicionar timeout para não travar
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    
+    try {
+      const response = await fetch(`${apiUrl}/produtos`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar produtos: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      log(`Produtos recebidos do servidor (${data.length})`);
+      
+      // Armazenar no AsyncStorage para uso offline
+      await AsyncStorage.setItem('produtos', JSON.stringify(data));
+      log('Produtos salvos no cache para uso offline');
+      
+      return data;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error; // Repassar para o catch externo
     }
-    
-    const data = await response.json();
-    log(`Produtos recebidos do servidor (${data.length})`);
-    
-    // Armazenar no AsyncStorage para uso offline
-    await AsyncStorage.setItem('produtos', JSON.stringify(data));
-    log('Produtos salvos no cache para uso offline');
-    
-    return data;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log('Erro ao buscar produtos:', errorMessage);
@@ -266,32 +498,46 @@ export const getProduto = async (id: number): Promise<Produto | null> => {
     
     // Fazer requisição à API
     const apiUrl = await getApiUrl();
-    const response = await fetch(`${apiUrl}/produtos/${id}`);
     
-    if (!response.ok) {
-      if (response.status === 404) {
-        log(`Produto não encontrado no servidor (ID: ${id})`);
-        return null;
+    // Adicionar timeout para não travar
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    try {
+      const response = await fetch(`${apiUrl}/produtos/${id}`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          log(`Produto não encontrado no servidor (ID: ${id})`);
+          return null;
+        }
+        throw new Error(`Erro ao buscar produto: ${response.status} ${response.statusText}`);
       }
-      throw new Error(`Erro ao buscar produto: ${response.status} ${response.statusText}`);
-    }
-    
-    const produto = await response.json();
-    log(`Produto recebido do servidor: ${produto.nome}`);
-    
-    // Atualizar cache local
-    const produtosJson = await AsyncStorage.getItem('produtos');
-    if (produtosJson) {
-      const produtos: Produto[] = JSON.parse(produtosJson);
-      const index = produtos.findIndex(p => p.id === id);
-      if (index !== -1) {
-        produtos[index] = produto;
-        await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
-        log('Cache local atualizado com o produto mais recente');
+      
+      const produto = await response.json();
+      log(`Produto recebido do servidor: ${produto.nome}`);
+      
+      // Atualizar cache local
+      const produtosJson = await AsyncStorage.getItem('produtos');
+      if (produtosJson) {
+        const produtos: Produto[] = JSON.parse(produtosJson);
+        const index = produtos.findIndex(p => p.id === id);
+        if (index !== -1) {
+          produtos[index] = produto;
+          await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
+          log('Cache local atualizado com o produto mais recente');
+        }
       }
+      
+      return produto;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error; // Repassar para o catch externo
     }
-    
-    return produto;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log(`Erro ao buscar produto com ID ${id}:`, errorMessage);
@@ -322,32 +568,51 @@ export const getProdutoPorCodigo = async (codigo: string): Promise<Produto | nul
     
     // Fazer requisição à API
     const apiUrl = await getApiUrl();
-    const response = await fetch(`${apiUrl}/produtos/codigo/${codigo}`);
     
-    if (!response.ok) {
-      if (response.status === 404) {
-        log(`Produto não encontrado no servidor (código: ${codigo})`);
-        return null;
+    // Adicionar timeout para não travar
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    try {
+      const response = await fetch(`${apiUrl}/produtos/codigo/${codigo}`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          log(`Produto não encontrado no servidor (código: ${codigo})`);
+          return null;
+        }
+        throw new Error(`Erro ao buscar produto: ${response.status} ${response.statusText}`);
       }
-      throw new Error(`Erro ao buscar produto: ${response.status} ${response.statusText}`);
-    }
-    
-    const produto = await response.json();
-    log(`Produto recebido do servidor: ${produto.nome}`);
-    
-    // Atualizar cache local
-    const produtosJson = await AsyncStorage.getItem('produtos');
-    if (produtosJson) {
-      const produtos: Produto[] = JSON.parse(produtosJson);
-      const index = produtos.findIndex(p => p.codigo === codigo);
-      if (index !== -1) {
-        produtos[index] = produto;
-        await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
-        log('Cache local atualizado com o produto mais recente');
+      
+      const produto = await response.json();
+      log(`Produto recebido do servidor: ${produto.nome}`);
+      
+      // Atualizar cache local
+      const produtosJson = await AsyncStorage.getItem('produtos');
+      if (produtosJson) {
+        const produtos: Produto[] = JSON.parse(produtosJson);
+        const index = produtos.findIndex(p => p.codigo === codigo);
+        if (index !== -1) {
+          produtos[index] = produto;
+          await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
+          log('Cache local atualizado com o produto mais recente');
+        } else {
+          // Adicionar o novo produto ao cache
+          produtos.push(produto);
+          await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
+          log('Novo produto adicionado ao cache local');
+        }
       }
+      
+      return produto;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error; // Repassar para o catch externo
     }
-    
-    return produto;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log(`Erro ao buscar produto com código ${codigo}:`, errorMessage);
@@ -421,39 +686,95 @@ export const criarProduto = async (produto: Produto): Promise<Produto> => {
     // Fazer requisição à API
     log('Enviando requisição para criar produto no servidor');
     const apiUrl = await getApiUrl();
-    const response = await fetch(`${apiUrl}/produtos`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(produto),
-    });
     
-    if (!response.ok) {
-      let mensagemErro = 'Erro ao criar produto';
-      try {
-        const errorData = await response.json();
-        mensagemErro = errorData.error || `Erro ao criar produto: ${response.status} ${response.statusText}`;
-      } catch (e) {
-        mensagemErro = `Erro ao criar produto: ${response.status} ${response.statusText}`;
+    // Adicionar timeout para não travar
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    
+    try {
+      const response = await fetch(`${apiUrl}/produtos`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(produto),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        let mensagemErro = 'Erro ao criar produto';
+        try {
+          const errorData = await response.json();
+          mensagemErro = errorData.error || `Erro ao criar produto: ${response.status} ${response.statusText}`;
+        } catch (e) {
+          mensagemErro = `Erro ao criar produto: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(mensagemErro);
       }
-      throw new Error(mensagemErro);
+      
+      const novoProduto = await response.json();
+      log('Produto criado com sucesso no servidor:', novoProduto);
+      
+      // Atualizar cache local
+      const produtosJson = await AsyncStorage.getItem('produtos');
+      const produtos: Produto[] = produtosJson ? JSON.parse(produtosJson) : [];
+      produtos.push(novoProduto);
+      await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
+      log('Cache local atualizado com o novo produto');
+      
+      return novoProduto;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error; // Repassar para o catch externo
     }
-    
-    const novoProduto = await response.json();
-    log('Produto criado com sucesso no servidor:', novoProduto);
-    
-    // Atualizar cache local
-    const produtosJson = await AsyncStorage.getItem('produtos');
-    const produtos: Produto[] = produtosJson ? JSON.parse(produtosJson) : [];
-    produtos.push(novoProduto);
-    await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
-    log('Cache local atualizado com o novo produto');
-    
-    return novoProduto;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log('Erro ao criar produto:', errorMessage);
+    
+    // Se o erro for de timeout ou conexão, salvar localmente e adicionar à fila
+    if ((errorMessage.includes('timeout') || 
+         errorMessage.includes('abort') || 
+         errorMessage.includes('network') ||
+         errorMessage.includes('Failed to fetch')) && 
+        errorMessage !== 'Código já está em uso ou é inválido' &&
+        errorMessage !== 'Nome do produto é obrigatório' &&
+        errorMessage !== 'Quantidade deve ser um número não-negativo') {
+      
+      log('Erro de conexão ao criar produto, salvando localmente');
+      
+      // Gerar ID temporário
+      produto.id = Date.now();
+      produto.data_criacao = new Date().toISOString();
+      
+      // Salvar localmente
+      const produtosJson = await AsyncStorage.getItem('produtos');
+      const produtos: Produto[] = produtosJson ? JSON.parse(produtosJson) : [];
+      produtos.push(produto);
+      await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
+      
+      // Adicionar à fila de sincronização
+      const syncQueueJson = await AsyncStorage.getItem('sync_queue');
+      const syncQueue = syncQueueJson ? JSON.parse(syncQueueJson) : [];
+      
+      syncQueue.push({
+        tipo: 'criar_produto',
+        dados: produto,
+        data: new Date().toISOString(),
+      });
+      
+      await AsyncStorage.setItem('sync_queue', JSON.stringify(syncQueue));
+      log('Produto salvo localmente e adicionado à fila de sincronização após erro de conexão');
+      
+      // Registrar movimentação se necessário
+      if (produto.quantidade > 0) {
+        registrarMovimentacaoLocal(produto.id, 'entrada', produto.quantidade, 'Estoque inicial');
+      }
+      
+      return produto;
+    }
+    
     throw error;
   }
 };
@@ -534,40 +855,108 @@ export const atualizarProduto = async (id: number, produto: Produto): Promise<Pr
     // Fazer requisição à API
     log('Enviando requisição para atualizar produto no servidor');
     const apiUrl = await getApiUrl();
-    const response = await fetch(`${apiUrl}/produtos/${id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(produto),
-    });
     
-    if (!response.ok) {
-      let mensagemErro = 'Erro ao atualizar produto';
-      try {
-        const errorData = await response.json();
-        mensagemErro = errorData.error || `Erro ao atualizar produto: ${response.status} ${response.statusText}`;
-      } catch (e) {
-        mensagemErro = `Erro ao atualizar produto: ${response.status} ${response.statusText}`;
+    // Adicionar timeout para não travar
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    
+    try {
+      const response = await fetch(`${apiUrl}/produtos/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(produto),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        let mensagemErro = 'Erro ao atualizar produto';
+        try {
+          const errorData = await response.json();
+          mensagemErro = errorData.error || `Erro ao atualizar produto: ${response.status} ${response.statusText}`;
+        } catch (e) {
+          mensagemErro = `Erro ao atualizar produto: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(mensagemErro);
       }
-      throw new Error(mensagemErro);
+      
+      const produtoAtualizado = await response.json();
+      log('Produto atualizado com sucesso no servidor:', produtoAtualizado);
+      
+      // Atualizar cache local
+      const index = produtos.findIndex(p => p.id === id);
+      if (index !== -1) {
+        produtos[index] = produtoAtualizado;
+        await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
+        log('Cache local atualizado com o produto modificado');
+      }
+      
+      return produtoAtualizado;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error; // Repassar para o catch externo
     }
-    
-    const produtoAtualizado = await response.json();
-    log('Produto atualizado com sucesso no servidor:', produtoAtualizado);
-    
-    // Atualizar cache local
-    const index = produtos.findIndex(p => p.id === id);
-    if (index !== -1) {
-      produtos[index] = produtoAtualizado;
-      await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
-      log('Cache local atualizado com o produto modificado');
-    }
-    
-    return produtoAtualizado;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log(`Erro ao atualizar produto ID ${id}:`, errorMessage);
+    
+    // Se o erro for de conexão, salvar localmente
+    if (errorMessage.includes('timeout') || 
+        errorMessage.includes('abort') || 
+        errorMessage.includes('network') ||
+        errorMessage.includes('Failed to fetch')) {
+      
+      log('Erro de conexão ao atualizar produto, salvando localmente');
+      
+      // Processamento offline
+      const produtosJson = await AsyncStorage.getItem('produtos');
+      const produtos: Produto[] = produtosJson ? JSON.parse(produtosJson) : [];
+      
+      // Encontrar o produto
+      const index = produtos.findIndex(p => p.id === id);
+      if (index !== -1) {
+        // Verificar mudança na quantidade
+        const quantidadeAnterior = produtos[index].quantidade;
+        const diferencaQuantidade = produto.quantidade - quantidadeAnterior;
+        
+        // Atualizar dados
+        produto.id = id;
+        produto.data_atualizacao = new Date().toISOString();
+        produtos[index] = produto;
+        
+        // Salvar no AsyncStorage
+        await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
+        
+        // Adicionar à fila de sincronização
+        const syncQueueJson = await AsyncStorage.getItem('sync_queue');
+        const syncQueue = syncQueueJson ? JSON.parse(syncQueueJson) : [];
+        
+        syncQueue.push({
+          tipo: 'atualizar_produto',
+          id,
+          dados: produto,
+          data: new Date().toISOString(),
+        });
+        
+        await AsyncStorage.setItem('sync_queue', JSON.stringify(syncQueue));
+        
+        // Registrar movimentação se houver mudança na quantidade
+        if (diferencaQuantidade !== 0) {
+          if (diferencaQuantidade > 0) {
+            registrarMovimentacaoLocal(id, 'entrada', diferencaQuantidade, 'Ajuste manual');
+          } else {
+            registrarMovimentacaoLocal(id, 'saida', Math.abs(diferencaQuantidade), 'Ajuste manual');
+          }
+        }
+        
+        log('Produto atualizado localmente após erro de conexão');
+        return produto;
+      }
+    }
+    
     throw error;
   }
 };
@@ -625,39 +1014,102 @@ export const deletarProduto = async (id: number): Promise<void> => {
     // Fazer requisição à API
     log('Enviando requisição para excluir produto no servidor');
     const apiUrl = await getApiUrl();
-    const response = await fetch(`${apiUrl}/produtos/${id}`, {
-      method: 'DELETE',
-    });
     
-    if (!response.ok) {
-      let mensagemErro = 'Erro ao excluir produto';
-      try {
-        const errorData = await response.json();
-        mensagemErro = errorData.error || `Erro ao excluir produto: ${response.status} ${response.statusText}`;
-      } catch (e) {
-        mensagemErro = `Erro ao excluir produto: ${response.status} ${response.statusText}`;
+    // Adicionar timeout para não travar
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    
+    try {
+      const response = await fetch(`${apiUrl}/produtos/${id}`, {
+        method: 'DELETE',
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        let mensagemErro = 'Erro ao excluir produto';
+        try {
+          const errorData = await response.json();
+          mensagemErro = errorData.error || `Erro ao excluir produto: ${response.status} ${response.statusText}`;
+        } catch (e) {
+          mensagemErro = `Erro ao excluir produto: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(mensagemErro);
       }
-      throw new Error(mensagemErro);
-    }
-    
-    log('Produto excluído com sucesso no servidor');
-    
-    // Atualizar cache local
-    const produtosJson = await AsyncStorage.getItem('produtos');
-    if (produtosJson) {
-      const produtos: Produto[] = JSON.parse(produtosJson);
-      const novoProdutos = produtos.filter(p => p.id !== id);
-      await AsyncStorage.setItem('produtos', JSON.stringify(novoProdutos));
-      log('Cache local atualizado após exclusão');
-    }
-    
-    // Remover movimentações locais deste produto
-    const movimentacoesJson = await AsyncStorage.getItem('movimentacoes');
-    if (movimentacoesJson) {
-      const movimentacoes: Movimentacao[] = JSON.parse(movimentacoesJson);
-      const novasMovimentacoes = movimentacoes.filter(m => m.produto_id !== id);
-      await AsyncStorage.setItem('movimentacoes', JSON.stringify(novasMovimentacoes));
-      log(`Removidas movimentações do produto localmente`);
+      
+      log('Produto excluído com sucesso no servidor');
+      
+      // Atualizar cache local
+      const produtosJson = await AsyncStorage.getItem('produtos');
+      if (produtosJson) {
+        const produtos: Produto[] = JSON.parse(produtosJson);
+        const novoProdutos = produtos.filter(p => p.id !== id);
+        await AsyncStorage.setItem('produtos', JSON.stringify(novoProdutos));
+        log('Cache local atualizado após exclusão');
+      }
+      
+      // Remover movimentações locais deste produto
+      const movimentacoesJson = await AsyncStorage.getItem('movimentacoes');
+      if (movimentacoesJson) {
+        const movimentacoes: Movimentacao[] = JSON.parse(movimentacoesJson);
+        const novasMovimentacoes = movimentacoes.filter(m => m.produto_id !== id);
+        await AsyncStorage.setItem('movimentacoes', JSON.stringify(novasMovimentacoes));
+        log(`Removidas movimentações do produto localmente`);
+      }
+    } catch (error) {
+      clearTimeout(timeoutId);
+      
+      // Se o erro for de conexão, salvar para sincronização posterior
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('timeout') || 
+          errorMessage.includes('abort') || 
+          errorMessage.includes('network') ||
+          errorMessage.includes('Failed to fetch')) {
+        
+        log('Erro de conexão ao excluir produto, processando offline');
+        
+        // Remover localmente
+        const produtosJson = await AsyncStorage.getItem('produtos');
+        const produtos: Produto[] = produtosJson ? JSON.parse(produtosJson) : [];
+        
+        // Verificar se o produto existe
+        const index = produtos.findIndex(p => p.id === id);
+        if (index === -1) {
+          throw new Error('Produto não encontrado');
+        }
+        
+        // Remover o produto
+        produtos.splice(index, 1);
+        
+        // Salvar no AsyncStorage
+        await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
+        
+        // Adicionar à fila de sincronização
+        const syncQueueJson = await AsyncStorage.getItem('sync_queue');
+        const syncQueue = syncQueueJson ? JSON.parse(syncQueueJson) : [];
+        
+        syncQueue.push({
+          tipo: 'deletar_produto',
+          id,
+          data: new Date().toISOString(),
+        });
+        
+        await AsyncStorage.setItem('sync_queue', JSON.stringify(syncQueue));
+        
+        // Remover movimentações locais deste produto
+        const movimentacoesJson = await AsyncStorage.getItem('movimentacoes');
+        if (movimentacoesJson) {
+          const movimentacoes: Movimentacao[] = JSON.parse(movimentacoesJson);
+          const novasMovimentacoes = movimentacoes.filter(m => m.produto_id !== id);
+          await AsyncStorage.setItem('movimentacoes', JSON.stringify(novasMovimentacoes));
+        }
+        
+        log('Produto removido localmente e adicionado à fila de sincronização');
+        return;
+      }
+      
+      throw error; // Repassar outros erros
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -684,20 +1136,34 @@ export const getMovimentacoes = async (): Promise<Movimentacao[]> => {
     
     // Fazer requisição à API
     const apiUrl = await getApiUrl();
-    const response = await fetch(`${apiUrl}/movimentacoes`);
     
-    if (!response.ok) {
-      throw new Error(`Erro ao buscar movimentações: ${response.status} ${response.statusText}`);
+    // Adicionar timeout para não travar
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    
+    try {
+      const response = await fetch(`${apiUrl}/movimentacoes`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar movimentações: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      log(`Movimentações recebidas do servidor (${data.length})`);
+      
+      // Armazenar no AsyncStorage para uso offline
+      await AsyncStorage.setItem('movimentacoes', JSON.stringify(data));
+      log('Movimentações salvas no cache para uso offline');
+      
+      return data;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error; // Repassar para o catch externo
     }
-    
-    const data = await response.json();
-    log(`Movimentações recebidas do servidor (${data.length})`);
-    
-    // Armazenar no AsyncStorage para uso offline
-    await AsyncStorage.setItem('movimentacoes', JSON.stringify(data));
-    log('Movimentações salvas no cache para uso offline');
-    
-    return data;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log('Erro ao buscar movimentações:', errorMessage);
@@ -727,31 +1193,45 @@ export const getMovimentacoesPorProduto = async (produtoId: number): Promise<Mov
     
     // Fazer requisição à API
     const apiUrl = await getApiUrl();
-    const response = await fetch(`${apiUrl}/movimentacoes/produto/${produtoId}`);
     
-    if (!response.ok) {
-      throw new Error(`Erro ao buscar movimentações: ${response.status} ${response.statusText}`);
+    // Adicionar timeout para não travar
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    
+    try {
+      const response = await fetch(`${apiUrl}/movimentacoes/produto/${produtoId}`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar movimentações: ${response.status} ${response.statusText}`);
+      }
+      
+      const movimentacoes = await response.json();
+      log(`Movimentações recebidas do servidor (${movimentacoes.length})`);
+      
+      // Armazenar no AsyncStorage para uso offline
+      // Primeiro, obter todas as movimentações existentes
+      const movimentacoesJson = await AsyncStorage.getItem('movimentacoes');
+      const todasMovimentacoes: Movimentacao[] = movimentacoesJson ? JSON.parse(movimentacoesJson) : [];
+      
+      // Remover movimentações deste produto
+      const semEsseProduto = todasMovimentacoes.filter(m => m.produto_id !== produtoId);
+      
+      // Adicionar as movimentações atualizadas
+      const novasMovimentacoes = [...semEsseProduto, ...movimentacoes];
+      
+      // Salvar no AsyncStorage
+      await AsyncStorage.setItem('movimentacoes', JSON.stringify(novasMovimentacoes));
+      log('Cache local atualizado com as movimentações do produto');
+      
+      return movimentacoes;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error; // Repassar para o catch externo
     }
-    
-    const movimentacoes = await response.json();
-    log(`Movimentações recebidas do servidor (${movimentacoes.length})`);
-    
-    // Armazenar no AsyncStorage para uso offline
-    // Primeiro, obter todas as movimentações existentes
-    const movimentacoesJson = await AsyncStorage.getItem('movimentacoes');
-    const todasMovimentacoes: Movimentacao[] = movimentacoesJson ? JSON.parse(movimentacoesJson) : [];
-    
-    // Remover movimentações deste produto
-    const semEsseProduto = todasMovimentacoes.filter(m => m.produto_id !== produtoId);
-    
-    // Adicionar as movimentações atualizadas
-    const novasMovimentacoes = [...semEsseProduto, ...movimentacoes];
-    
-    // Salvar no AsyncStorage
-    await AsyncStorage.setItem('movimentacoes', JSON.stringify(novasMovimentacoes));
-    log('Cache local atualizado com as movimentações do produto');
-    
-    return movimentacoes;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log(`Erro ao buscar movimentações do produto ID ${produtoId}:`, errorMessage);
@@ -884,60 +1364,124 @@ export const criarMovimentacao = async (movimentacao: Movimentacao): Promise<Mov
     // Fazer requisição à API
     log('Enviando requisição para criar movimentação no servidor');
     const apiUrl = await getApiUrl();
-    const response = await fetch(`${apiUrl}/movimentacoes`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(movimentacao),
-    });
     
-    if (!response.ok) {
-      let mensagemErro = 'Erro ao registrar movimentação';
-      try {
-        const errorData = await response.json();
-        mensagemErro = errorData.error || `Erro ao registrar movimentação: ${response.status} ${response.statusText}`;
-      } catch (e) {
-        mensagemErro = `Erro ao registrar movimentação: ${response.status} ${response.statusText}`;
-      }
-      throw new Error(mensagemErro);
-    }
+    // Adicionar timeout para não travar
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     
-    const novaMovimentacao = await response.json();
-    log('Movimentação criada com sucesso no servidor:', novaMovimentacao);
-    
-    // Atualizar cache local - movimentações
-    const movimentacoesJson = await AsyncStorage.getItem('movimentacoes');
-    const movimentacoes: Movimentacao[] = movimentacoesJson ? JSON.parse(movimentacoesJson) : [];
-    
-    // Adicionar informações do produto
-    if (produto) {
-      novaMovimentacao.produto_codigo = produto.codigo;
-      novaMovimentacao.produto_nome = produto.nome;
-    }
-    
-    movimentacoes.push(novaMovimentacao);
-    await AsyncStorage.setItem('movimentacoes', JSON.stringify(movimentacoes));
-    log('Cache local atualizado com a nova movimentação');
-    
-    // Atualizar quantidade do produto no cache
-    const index = produtos.findIndex(p => p.id === movimentacao.produto_id);
-    if (index !== -1) {
-      if (movimentacao.tipo === 'entrada') {
-        produtos[index].quantidade += movimentacao.quantidade;
-      } else {
-        produtos[index].quantidade -= movimentacao.quantidade;
-        if (produtos[index].quantidade < 0) produtos[index].quantidade = 0;
+    try {
+      const response = await fetch(`${apiUrl}/movimentacoes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(movimentacao),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        let mensagemErro = 'Erro ao registrar movimentação';
+        try {
+          const errorData = await response.json();
+          mensagemErro = errorData.error || `Erro ao registrar movimentação: ${response.status} ${response.statusText}`;
+        } catch (e) {
+          mensagemErro = `Erro ao registrar movimentação: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(mensagemErro);
       }
       
-      await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
-      log(`Quantidade do produto atualizada no cache: ${produtos[index].quantidade}`);
+      const novaMovimentacao = await response.json();
+      log('Movimentação criada com sucesso no servidor:', novaMovimentacao);
+      
+      // Atualizar cache local - movimentações
+      const movimentacoesJson = await AsyncStorage.getItem('movimentacoes');
+      const movimentacoes: Movimentacao[] = movimentacoesJson ? JSON.parse(movimentacoesJson) : [];
+      
+      // Adicionar informações do produto
+      if (produto) {
+        novaMovimentacao.produto_codigo = produto.codigo;
+        novaMovimentacao.produto_nome = produto.nome;
+      }
+      
+      movimentacoes.push(novaMovimentacao);
+      await AsyncStorage.setItem('movimentacoes', JSON.stringify(movimentacoes));
+      log('Cache local atualizado com a nova movimentação');
+      
+      // Atualizar quantidade do produto no cache
+      const index = produtos.findIndex(p => p.id === movimentacao.produto_id);
+      if (index !== -1) {
+        if (movimentacao.tipo === 'entrada') {
+          produtos[index].quantidade += movimentacao.quantidade;
+        } else {
+          produtos[index].quantidade -= movimentacao.quantidade;
+          if (produtos[index].quantidade < 0) produtos[index].quantidade = 0;
+        }
+        
+        await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
+        log(`Quantidade do produto atualizada no cache: ${produtos[index].quantidade}`);
+      }
+      
+      return novaMovimentacao;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error; // Repassar para o catch externo
     }
-    
-    return novaMovimentacao;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log('Erro ao criar movimentação:', errorMessage);
+    
+    // Se o erro for de conexão, processar localmente
+    if ((errorMessage.includes('timeout') || 
+         errorMessage.includes('abort') || 
+         errorMessage.includes('network') ||
+         errorMessage.includes('Failed to fetch')) && 
+        errorMessage !== 'ID do produto é obrigatório' &&
+        errorMessage !== 'Quantidade deve ser maior que zero' &&
+        errorMessage !== 'Tipo de movimentação deve ser "entrada" ou "saida"' &&
+        errorMessage !== 'Produto não encontrado' &&
+        errorMessage !== 'Quantidade insuficiente em estoque') {
+      
+      log('Erro de conexão ao criar movimentação, processando localmente');
+      
+      // Processar movimentação localmente
+      const produtosJson = await AsyncStorage.getItem('produtos');
+      const produtos: Produto[] = produtosJson ? JSON.parse(produtosJson) : [];
+      const produto = produtos.find(p => p.id === movimentacao.produto_id);
+      
+      if (!produto) {
+        throw new Error('Produto não encontrado');
+      }
+      
+      if (movimentacao.tipo === 'saida' && produto.quantidade < movimentacao.quantidade) {
+        throw new Error('Quantidade insuficiente em estoque');
+      }
+      
+      // Registrar movimentação
+      const novaMovimentacao = await registrarMovimentacaoLocal(
+        movimentacao.produto_id,
+        movimentacao.tipo,
+        movimentacao.quantidade,
+        movimentacao.notas
+      );
+      
+      // Atualizar quantidade do produto
+      const index = produtos.findIndex(p => p.id === movimentacao.produto_id);
+      if (index !== -1) {
+        if (movimentacao.tipo === 'entrada') {
+          produtos[index].quantidade += movimentacao.quantidade;
+        } else {
+          produtos[index].quantidade -= movimentacao.quantidade;
+          if (produtos[index].quantidade < 0) produtos[index].quantidade = 0;
+        }
+        
+        await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
+      }
+      
+      return novaMovimentacao;
+    }
+    
     throw error;
   }
 };
@@ -960,20 +1504,34 @@ export const getConfiguracoes = async (): Promise<Configuracao[]> => {
     
     // Fazer requisição à API
     const apiUrl = await getApiUrl();
-    const response = await fetch(`${apiUrl}/configuracoes`);
     
-    if (!response.ok) {
-      throw new Error(`Erro ao buscar configurações: ${response.status} ${response.statusText}`);
+    // Adicionar timeout para não travar
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    try {
+      const response = await fetch(`${apiUrl}/configuracoes`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar configurações: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      log(`Configurações recebidas do servidor (${data.length})`);
+      
+      // Armazenar no AsyncStorage para uso offline
+      await AsyncStorage.setItem('configuracoes', JSON.stringify(data));
+      log('Configurações salvas no cache para uso offline');
+      
+      return data;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error; // Repassar para o catch externo
     }
-    
-    const data = await response.json();
-    log(`Configurações recebidas do servidor (${data.length})`);
-    
-    // Armazenar no AsyncStorage para uso offline
-    await AsyncStorage.setItem('configuracoes', JSON.stringify(data));
-    log('Configurações salvas no cache para uso offline');
-    
-    return data;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log('Erro ao buscar configurações:', errorMessage);
@@ -1003,34 +1561,48 @@ export const getConfiguracao = async (chave: string): Promise<Configuracao | nul
     
     // Fazer requisição à API
     const apiUrl = await getApiUrl();
-    const response = await fetch(`${apiUrl}/configuracoes/${chave}`);
     
-    if (!response.ok) {
-      if (response.status === 404) {
-        log(`Configuração não encontrada no servidor (chave: ${chave})`);
-        return null;
+    // Adicionar timeout para não travar
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    try {
+      const response = await fetch(`${apiUrl}/configuracoes/${chave}`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          log(`Configuração não encontrada no servidor (chave: ${chave})`);
+          return null;
+        }
+        throw new Error(`Erro ao buscar configuração: ${response.status} ${response.statusText}`);
       }
-      throw new Error(`Erro ao buscar configuração: ${response.status} ${response.statusText}`);
+      
+      const configuracao = await response.json();
+      log(`Configuração recebida do servidor: ${configuracao.chave}=${configuracao.valor}`);
+      
+      // Atualizar cache local
+      const configuracoesJson = await AsyncStorage.getItem('configuracoes');
+      const configuracoes: Configuracao[] = configuracoesJson ? JSON.parse(configuracoesJson) : [];
+      const index = configuracoes.findIndex(c => c.chave === chave);
+      
+      if (index !== -1) {
+        configuracoes[index] = configuracao;
+      } else {
+        configuracoes.push(configuracao);
+      }
+      
+      await AsyncStorage.setItem('configuracoes', JSON.stringify(configuracoes));
+      log('Cache local atualizado com a configuração');
+      
+      return configuracao;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error; // Repassar para o catch externo
     }
-    
-    const configuracao = await response.json();
-    log(`Configuração recebida do servidor: ${configuracao.chave}=${configuracao.valor}`);
-    
-    // Atualizar cache local
-    const configuracoesJson = await AsyncStorage.getItem('configuracoes');
-    const configuracoes: Configuracao[] = configuracoesJson ? JSON.parse(configuracoesJson) : [];
-    const index = configuracoes.findIndex(c => c.chave === chave);
-    
-    if (index !== -1) {
-      configuracoes[index] = configuracao;
-    } else {
-      configuracoes.push(configuracao);
-    }
-    
-    await AsyncStorage.setItem('configuracoes', JSON.stringify(configuracoes));
-    log('Cache local atualizado com a configuração');
-    
-    return configuracao;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log(`Erro ao buscar configuração com chave ${chave}:`, errorMessage);
@@ -1097,46 +1669,108 @@ export const atualizarConfiguracao = async (chave: string, valor: string): Promi
     // Fazer requisição à API
     log('Enviando requisição para atualizar configuração no servidor');
     const apiUrl = await getApiUrl();
-    const response = await fetch(`${apiUrl}/configuracoes/${chave}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ valor }),
-    });
     
-    if (!response.ok) {
-      let mensagemErro = 'Erro ao atualizar configuração';
-      try {
-        const errorData = await response.json();
-        mensagemErro = errorData.error || `Erro ao atualizar configuração: ${response.status} ${response.statusText}`;
-      } catch (e) {
-        mensagemErro = `Erro ao atualizar configuração: ${response.status} ${response.statusText}`;
+    // Adicionar timeout para não travar
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    try {
+      const response = await fetch(`${apiUrl}/configuracoes/${chave}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ valor }),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        let mensagemErro = 'Erro ao atualizar configuração';
+        try {
+          const errorData = await response.json();
+          mensagemErro = errorData.error || `Erro ao atualizar configuração: ${response.status} ${response.statusText}`;
+        } catch (e) {
+          mensagemErro = `Erro ao atualizar configuração: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(mensagemErro);
       }
-      throw new Error(mensagemErro);
+      
+      const configuracaoAtualizada = await response.json();
+      log('Configuração atualizada com sucesso no servidor:', configuracaoAtualizada);
+      
+      // Atualizar cache local
+      const configuracoesJson = await AsyncStorage.getItem('configuracoes');
+      const configuracoes: Configuracao[] = configuracoesJson ? JSON.parse(configuracoesJson) : [];
+      const index = configuracoes.findIndex(c => c.chave === chave);
+      
+      if (index !== -1) {
+        configuracoes[index] = configuracaoAtualizada;
+      } else {
+        configuracoes.push(configuracaoAtualizada);
+      }
+      
+      await AsyncStorage.setItem('configuracoes', JSON.stringify(configuracoes));
+      log('Cache local atualizado com a configuração modificada');
+      
+      return configuracaoAtualizada;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error; // Repassar para o catch externo
     }
-    
-    const configuracaoAtualizada = await response.json();
-    log('Configuração atualizada com sucesso no servidor:', configuracaoAtualizada);
-    
-    // Atualizar cache local
-    const configuracoesJson = await AsyncStorage.getItem('configuracoes');
-    const configuracoes: Configuracao[] = configuracoesJson ? JSON.parse(configuracoesJson) : [];
-    const index = configuracoes.findIndex(c => c.chave === chave);
-    
-    if (index !== -1) {
-      configuracoes[index] = configuracaoAtualizada;
-    } else {
-      configuracoes.push(configuracaoAtualizada);
-    }
-    
-    await AsyncStorage.setItem('configuracoes', JSON.stringify(configuracoes));
-    log('Cache local atualizado com a configuração modificada');
-    
-    return configuracaoAtualizada;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log(`Erro ao atualizar configuração ${chave}:`, errorMessage);
+    
+    // Se o erro for de conexão, processar localmente
+    if (errorMessage.includes('timeout') || 
+        errorMessage.includes('abort') || 
+        errorMessage.includes('network') ||
+        errorMessage.includes('Failed to fetch')) {
+      
+      log('Erro de conexão ao atualizar configuração, processando localmente');
+      
+      // Processar localmente
+      const configuracoesJson = await AsyncStorage.getItem('configuracoes');
+      const configuracoes: Configuracao[] = configuracoesJson ? JSON.parse(configuracoesJson) : [];
+      
+      // Encontrar e atualizar a configuração
+      let configuracao = configuracoes.find(c => c.chave === chave);
+      
+      if (configuracao) {
+        configuracao.valor = valor;
+        configuracao.data_atualizacao = new Date().toISOString();
+      } else {
+        configuracao = {
+          id: Date.now(),
+          chave,
+          valor,
+          data_atualizacao: new Date().toISOString(),
+        };
+        configuracoes.push(configuracao);
+      }
+      
+      // Salvar no AsyncStorage
+      await AsyncStorage.setItem('configuracoes', JSON.stringify(configuracoes));
+      
+      // Adicionar à fila de sincronização
+      const syncQueueJson = await AsyncStorage.getItem('sync_queue');
+      const syncQueue = syncQueueJson ? JSON.parse(syncQueueJson) : [];
+      
+      syncQueue.push({
+        tipo: 'atualizar_configuracao',
+        chave,
+        valor,
+        data: new Date().toISOString(),
+      });
+      
+      await AsyncStorage.setItem('sync_queue', JSON.stringify(syncQueue));
+      
+      log('Configuração atualizada localmente após erro de conexão');
+      return configuracao;
+    }
+    
     throw error;
   }
 };
@@ -1202,15 +1836,29 @@ export const getDashboardData = async (): Promise<DashboardData> => {
     
     // Fazer requisição à API
     const apiUrl = await getApiUrl();
-    const response = await fetch(`${apiUrl}/dashboard`);
     
-    if (!response.ok) {
-      throw new Error(`Erro ao buscar dados do dashboard: ${response.status} ${response.statusText}`);
+    // Adicionar timeout para não travar
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    
+    try {
+      const response = await fetch(`${apiUrl}/dashboard`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar dados do dashboard: ${response.status} ${response.statusText}`);
+      }
+      
+      const dashboardData = await response.json();
+      log('Dados do dashboard recebidos com sucesso do servidor');
+      return dashboardData;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error; // Repassar para o catch externo
     }
-    
-    const dashboardData = await response.json();
-    log('Dados do dashboard recebidos com sucesso do servidor');
-    return dashboardData;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log('Erro ao buscar dados do dashboard:', errorMessage);
@@ -1233,17 +1881,18 @@ export const getDashboardData = async (): Promise<DashboardData> => {
         .slice(0, 10)
         .map(m => {
           const produto = produtos.find(p => p.id === m.produto_id);
+          
           return {
             id: m.id,
             tipo: m.tipo,
             quantidade: m.quantidade,
             data_movimentacao: m.data_movimentacao || new Date().toISOString(),
             notas: m.notas,
-            produto_codigo: produto?.codigo || 'N/A',
-            produto_nome: produto?.nome || 'Produto desconhecido',
+            produto_codigo: m.produto_codigo || produto?.codigo || 'N/A',
+            produto_nome: m.produto_nome || produto?.nome || 'Produto desconhecido',
           };
         }),
-      top_produtos: produtos
+      top_produtos: [...produtos]
         .sort((a, b) => b.quantidade - a.quantidade)
         .slice(0, 5)
         .map(p => ({
@@ -1523,13 +2172,25 @@ export const definirServidor = async (ip: string, porta: string = '8080'): Promi
 // Obter endereço do servidor atual
 export const obterEnderecoServidor = async (): Promise<{ip: string, porta: string}> => {
   try {
-    const ip = await AsyncStorage.getItem('@server_ip') || DEFAULT_SERVER_IP;
+    // Se temos um servidor atual detectado e funcionando
+    if (servidorAtual) {
+      return { ip: servidorAtual, porta: portaAtual };
+    }
+    
+    // Tentar obter do AsyncStorage
+    const ip = await AsyncStorage.getItem('@server_ip') || '';
     const porta = await AsyncStorage.getItem('@server_port') || DEFAULT_PORT;
+    
+    // Se não temos IP salvo, mas temos último detectado
+    if (!ip && lastDetectedServer) {
+      return { ip: lastDetectedServer, porta };
+    }
+    
     return { ip, porta };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log('Erro ao obter endereço do servidor:', errorMessage);
-    return { ip: DEFAULT_SERVER_IP, porta: DEFAULT_PORT };
+    return { ip: '', porta: DEFAULT_PORT };
   }
 };
 

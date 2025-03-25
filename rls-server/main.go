@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -17,14 +18,67 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Configuração do banco de dados
-const (
-	host     = "localhost"
-	port     = 5432
-	user     = "danilo"
-	password = "Danilo@34333528"
-	dbname   = "rls_estoque"
+// Configuração do banco de dados - valores padrão, podem ser sobrescritos por variáveis de ambiente
+var (
+	dbHost     = getEnv("DB_HOST", "localhost")
+	dbPort     = getEnvAsInt("DB_PORT", 5432)
+	dbUser     = getEnv("DB_USER", "danilo")
+	dbPassword = getEnv("DB_PASSWORD", "Danilo@34333528")
+	dbName     = getEnv("DB_NAME", "rls_estoque")
 )
+
+// Função auxiliar para obter variável de ambiente com valor padrão
+func getEnv(key, defaultValue string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	return value
+}
+
+// Função auxiliar para obter variável de ambiente como inteiro
+func getEnvAsInt(key string, defaultValue int) int {
+	valueStr := getEnv(key, "")
+	if value, err := strconv.Atoi(valueStr); err == nil {
+		return value
+	}
+	return defaultValue
+}
+
+// Função para obter endereços IP locais
+func getLocalIPs() []string {
+	var ips []string
+
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		log.Printf("Erro ao obter interfaces de rede: %v", err)
+		return ips
+	}
+
+	for _, iface := range interfaces {
+		// Ignorar interfaces desativadas e loopback
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, addr := range addrs {
+			switch v := addr.(type) {
+			case *net.IPNet:
+				// Excluir endereços IPv6 e localhost
+				if ip4 := v.IP.To4(); ip4 != nil && !ip4.IsLoopback() {
+					ips = append(ips, ip4.String())
+				}
+			}
+		}
+	}
+
+	return ips
+}
 
 // Estruturas de dados
 type Produto struct {
@@ -118,8 +172,8 @@ func main() {
 	log.Printf("Iniciando servidor RLS Estoque API...")
 
 	// Inicializar conexão com o banco de dados
-	connStr := fmt.Sprintf("postgres://%s:%s@%s:%d/%s", user, password, host, port, dbname)
-	log.Printf("Conectando ao PostgreSQL: %s:%d/%s", host, port, dbname)
+	connStr := fmt.Sprintf("postgres://%s:%s@%s:%d/%s", dbUser, dbPassword, dbHost, dbPort, dbName)
+	log.Printf("Conectando ao PostgreSQL: %s:%d/%s", dbHost, dbPort, dbName)
 
 	var err error
 	config, err := pgxpool.ParseConfig(connStr)
@@ -153,7 +207,7 @@ func main() {
 	r.Use(gin.Recovery())
 	r.Use(Logger())
 
-	// Configurar CORS
+	// Configurar CORS - aceitar requisições de qualquer origem
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -196,12 +250,21 @@ func main() {
 		port = "8080"
 	}
 
+	// Obter IPs locais para mostrar nos logs
+	ips := getLocalIPs()
+
 	// Logar endereços de acesso
 	log.Printf("Servidor rodando nas seguintes URLs:")
 	log.Printf("- Local: http://localhost:%s", port)
-	log.Printf("- Rede: http://192.168.1.85:%s", port)
-	log.Printf("- Aceita conexões do celular (IP: 192.168.1.84)")
 
+	// Mostrar todos os IPs disponíveis na rede
+	for _, ip := range ips {
+		log.Printf("- Rede: http://%s:%s", ip, port)
+	}
+
+	log.Printf("- Aceita conexões de qualquer dispositivo na mesma rede")
+
+	// Iniciar servidor para escutar em todas as interfaces
 	log.Fatal(r.Run(":" + port))
 }
 
