@@ -1,28 +1,52 @@
 {
   "expo": {
-    "name": "rls-estoque",
+    "name": "RLS Estoque",
     "slug": "rls-estoque",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#1565C0"
     },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.rlsautomacao.estoque"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      }
+        "backgroundColor": "#1565C0"
+      },
+      "package": "com.rlsautomacao.estoque"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "newArchEnabled": true,
+    "plugins": [
+      [
+        "expo-barcode-scanner",
+        {
+          "cameraPermission": "O aplicativo RLS Estoque precisa acessar sua câmera para escanear códigos QR."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "O aplicativo RLS Estoque precisa acessar sua câmera."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "93d7ba51-c680-4688-9395-1e54aa4a11d3"
+      }
     }
   }
 }
