@@ -1,4 +1,3 @@
-
 {
   "expo": {
     "name": "RLS Estoque",
@@ -27,7 +26,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1565C0"
       },
-      "package": "com.rlsautomacao.estoque"
+      "package": "com.rlsautomacao.estoque",
+      "permissions": ["INTERNET"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -37,7 +37,6 @@
         "projectId": "93d7ba51-c680-4688-9395-1e54aa4a11d3"
       }
     },
-    
     "runtimeVersion": {
       "policy": "sdkVersion"
     },

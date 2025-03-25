@@ -28,7 +28,8 @@ interface Product {
   code: string;
   name: string;
   description?: string;
-  quantity: number;
+  quantidade: number;
+  quantity?: number;
 }
 
 // Definir cores do tema
@@ -117,7 +118,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           setLowStockCount(lowStock);
 
           // Contar total de itens em estoque
-          const total = products.reduce((sum, product) => sum + product.quantidade, 0);
+          const total = products.reduce((sum: number, p: Product) => sum + p.quantidade, 0);
           setTotalItems(total);
         } else {
           // Nenhum produto encontrado
@@ -275,15 +276,16 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                   if (jsonValue != null) {
                     const products = JSON.parse(jsonValue);
                     setTotalProducts(products.length);
-                    setLowStockCount(products.filter(p => p.quantidade < 5).length);
-                    setTotalItems(products.reduce((sum, p) => sum + p.quantidade, 0));
+                    setLowStockCount(products.filter((p: Product) => p.quantidade < 5).length);
+                    setTotalItems(products.reduce((sum: number, p: Product) => sum + p.quantidade, 0));
                     setLastUpdate(new Date().toLocaleTimeString());
                   }
                 } else {
                   Alert.alert("Erro na sincronização", result.mensagem);
                 }
               } catch (error) {
-                Alert.alert("Erro", `Falha ao sincronizar: ${error.message}`);
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                Alert.alert("Erro", `Falha ao sincronizar: ${errorMessage}`);
               }
             }}
           >
