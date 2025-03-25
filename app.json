@@ -3,6 +3,7 @@
   "expo": {
     "name": "RLS Estoque",
     "slug": "rls-estoque",
+    "owner": "danilotoic",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -33,7 +34,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "seu-projeto-id-aqui"
+        "projectId": "93d7ba51-c680-4688-9395-1e54aa4a11d3"
       }
     },
     

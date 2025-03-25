@@ -110,7 +110,12 @@ export const verificarConexao = async (): Promise<boolean> => {
   try {
     // Verificar se temos conectividade de internet primeiro
     const netInfoState = await NetInfo.fetch();
-    if (!netInfoState.isConnected) {
+    // FIX: Garantir que isConnected é um boolean
+    const isConnected: boolean = typeof netInfoState.isConnected === 'string'
+      ? netInfoState.isConnected === 'true'
+      : Boolean(netInfoState.isConnected);
+      
+    if (!isConnected) {
       log('Sem conexão com a internet, modo offline ativado');
       modoOffline = true;
       return false;
@@ -192,7 +197,7 @@ export const validarCodigoProduto = async (codigo: string, idExcluir?: number): 
 
 // Validar nome de produto (evitar vazio)
 export const validarNomeProduto = (nome: string): boolean => {
-  return nome && nome.trim() !== '';
+  return nome.trim() !== '';
 };
 
 // Validar quantidade (deve ser não-negativa)
@@ -1437,7 +1442,7 @@ export const sincronizarDados = async (): Promise<{
         } else {
           // Adicionar contagem de tentativas
           const tentativas = (item.tentativas || 0) + 1;
-          const itemComTentativas = {...item, tentativas};
+          const itemComTentativas = { ...item, tentativas };
           
           // Se menos de 5 tentativas, manter na fila
           if (tentativas < 5) {
