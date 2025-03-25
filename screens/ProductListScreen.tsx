@@ -11,44 +11,62 @@ import {
   RefreshControl,
   Platform
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { getProdutos, verificarConexao, getStatusConexao } from '../services/api';
 
 // Definição do tipo para as propriedades de navegação
 type ProductListScreenProps = {
   navigation: NativeStackNavigationProp<any, 'ProductList'>;
 };
 
-// Interface para o produto
-interface Product {
-  code: string;
-  name: string;
-  description?: string;
-  quantity: number;
+// Interface para o produto (formato da API)
+interface Produto {
+  id?: number;
+  codigo: string;
+  nome: string;
+  descricao?: string;
+  quantidade: number;
+  quantidade_minima?: number;
+  localizacao?: string;
+  fornecedor?: string;
+  notas?: string;
+  data_criacao?: string;
+  data_atualizacao?: string;
 }
 
 export default function ProductListScreen({ navigation }: ProductListScreenProps) {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
+  const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [filteredProdutos, setFilteredProdutos] = useState<Produto[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchText, setSearchText] = useState('');
-  const [sortOrder, setSortOrder] = useState<'name' | 'code' | 'quantity'>('name');
+  const [sortOrder, setSortOrder] = useState<'nome' | 'codigo' | 'quantidade'>('nome');
   const [sortAscending, setSortAscending] = useState(true);
+  const [isOnline, setIsOnline] = useState(getStatusConexao());
+
+  // Verificar conexão com o servidor
+  useEffect(() => {
+    const checkConnection = async () => {
+      const connected = await verificarConexao();
+      setIsOnline(connected);
+    };
+    
+    checkConnection();
+  }, []);
 
   // Função para carregar produtos
-  const loadProducts = async () => {
+  const loadProdutos = async () => {
     try {
       setLoading(true);
-      const jsonValue = await AsyncStorage.getItem('products');
-      let productsData: Product[] = [];
       
-      if (jsonValue != null) {
-        productsData = JSON.parse(jsonValue);
-      }
+      // Usar a função de API para buscar produtos
+      const produtosData = await getProdutos();
+      setProdutos(produtosData);
+      applyFiltersAndSorts(produtosData, searchText, sortOrder, sortAscending);
       
-      setProducts(productsData);
-      applyFiltersAndSorts(productsData, searchText, sortOrder, sortAscending);
+      // Verificar novamente o status da conexão
+      const connected = await verificarConexao();
+      setIsOnline(connected);
     } catch (e) {
       console.error("Erro ao carregar produtos", e);
       Alert.alert("Erro", "Não foi possível carregar a lista de produtos");
@@ -60,48 +78,48 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
 
   // Aplicar filtros e ordenação à lista de produtos
   const applyFiltersAndSorts = (
-    productsList: Product[], 
+    produtosList: Produto[], 
     search: string, 
-    order: 'name' | 'code' | 'quantity', 
+    order: 'nome' | 'codigo' | 'quantidade', 
     ascending: boolean
   ) => {
     // Primeiro aplicar a pesquisa
-    let result = productsList;
+    let result = produtosList;
     
     if (search.trim() !== '') {
       const searchLower = search.toLowerCase();
-      result = productsList.filter(
+      result = produtosList.filter(
         item => 
-          item.name.toLowerCase().includes(searchLower) || 
-          item.code.toLowerCase().includes(searchLower) ||
-          (item.description && item.description.toLowerCase().includes(searchLower))
+          item.nome.toLowerCase().includes(searchLower) || 
+          item.codigo.toLowerCase().includes(searchLower) ||
+          (item.descricao && item.descricao.toLowerCase().includes(searchLower))
       );
     }
     
     // Depois aplicar a ordenação
     result = [...result].sort((a, b) => {
-      if (order === 'name') {
+      if (order === 'nome') {
         return ascending 
-          ? a.name.localeCompare(b.name)
-          : b.name.localeCompare(a.name);
-      } else if (order === 'code') {
+          ? a.nome.localeCompare(b.nome)
+          : b.nome.localeCompare(a.nome);
+      } else if (order === 'codigo') {
         return ascending 
-          ? a.code.localeCompare(b.code)
-          : b.code.localeCompare(a.code);
-      } else { // quantity
+          ? a.codigo.localeCompare(b.codigo)
+          : b.codigo.localeCompare(a.codigo);
+      } else { // quantidade
         return ascending 
-          ? a.quantity - b.quantity
-          : b.quantity - a.quantity;
+          ? a.quantidade - b.quantidade
+          : b.quantidade - a.quantidade;
       }
     });
     
-    setFilteredProducts(result);
+    setFilteredProdutos(result);
   };
 
   // Efeito para carregar produtos ao montar o componente
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
-      loadProducts();
+      loadProdutos();
     });
 
     return unsubscribe;
@@ -109,11 +127,11 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
 
   // Efeito para aplicar filtros quando os critérios mudarem
   useEffect(() => {
-    applyFiltersAndSorts(products, searchText, sortOrder, sortAscending);
+    applyFiltersAndSorts(produtos, searchText, sortOrder, sortAscending);
   }, [searchText, sortOrder, sortAscending]);
 
   // Função para atualizar a ordem de classificação
-  const updateSortOrder = (order: 'name' | 'code' | 'quantity') => {
+  const updateSortOrder = (order: 'nome' | 'codigo' | 'quantidade') => {
     if (sortOrder === order) {
       // Se já está ordenando por este campo, inverte a direção
       setSortAscending(!sortAscending);
@@ -125,7 +143,7 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
   };
 
   // Função para exibir o ícone de ordenação
-  const getSortIcon = (field: 'name' | 'code' | 'quantity') => {
+  const getSortIcon = (field: 'nome' | 'codigo' | 'quantidade') => {
     if (sortOrder !== field) return '⋯';
     return sortAscending ? '↑' : '↓';
   };
@@ -172,27 +190,27 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
   };
 
   // Renderizar um item da lista
-  const renderProductItem = ({ item }: { item: Product }) => (
+  const renderProductItem = ({ item }: { item: Produto }) => (
     <TouchableOpacity
       style={styles.productItem}
       onPress={() => navigation.navigate('ProductDetail', { product: item })}
     >
       <View style={styles.productInfo}>
-        <Text style={styles.productCode}>{item.code}</Text>
-        <Text style={styles.productName}>{item.name}</Text>
-        {item.description ? (
+        <Text style={styles.productCode}>{item.codigo}</Text>
+        <Text style={styles.productName}>{item.nome}</Text>
+        {item.descricao ? (
           <Text style={styles.productDescription} numberOfLines={1}>
-            {item.description}
+            {item.descricao}
           </Text>
         ) : null}
       </View>
       <View style={[
         styles.quantityContainer, 
-        item.quantity < 5 ? styles.lowQuantity : 
-        item.quantity > 20 ? styles.highQuantity : 
+        item.quantidade < (item.quantidade_minima || 5) ? styles.lowQuantity : 
+        item.quantidade > 20 ? styles.highQuantity : 
         styles.normalQuantity
       ]}>
-        <Text style={styles.quantity}>{item.quantity}</Text>
+        <Text style={styles.quantity}>{item.quantidade}</Text>
         <Text style={styles.quantityLabel}>unid.</Text>
       </View>
     </TouchableOpacity>
@@ -200,6 +218,12 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
 
   return (
     <View style={styles.container}>
+      {!isOnline && (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.offlineText}>Modo Offline - Exibindo dados locais</Text>
+        </View>
+      )}
+      
       {/* Barra de pesquisa */}
       <View style={styles.searchContainer}>
         <TextInput
@@ -215,45 +239,45 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
       <View style={styles.sortHeader}>
         <TouchableOpacity 
           style={styles.sortButton} 
-          onPress={() => updateSortOrder('code')}
+          onPress={() => updateSortOrder('codigo')}
         >
           <Text style={styles.sortButtonText}>
-            Código {getSortIcon('code')}
+            Código {getSortIcon('codigo')}
           </Text>
         </TouchableOpacity>
         
         <TouchableOpacity 
           style={styles.sortButtonName} 
-          onPress={() => updateSortOrder('name')}
+          onPress={() => updateSortOrder('nome')}
         >
           <Text style={styles.sortButtonText}>
-            Nome {getSortIcon('name')}
+            Nome {getSortIcon('nome')}
           </Text>
         </TouchableOpacity>
         
         <TouchableOpacity 
           style={styles.sortButton} 
-          onPress={() => updateSortOrder('quantity')}
+          onPress={() => updateSortOrder('quantidade')}
         >
           <Text style={styles.sortButtonText}>
-            Qtd {getSortIcon('quantity')}
+            Qtd {getSortIcon('quantidade')}
           </Text>
         </TouchableOpacity>
       </View>
 
       {/* Lista de produtos */}
       <FlatList
-        data={filteredProducts}
-        keyExtractor={(item) => item.code}
+        data={filteredProdutos}
+        keyExtractor={(item) => item.codigo}
         renderItem={renderProductItem}
         ListEmptyComponent={renderEmptyList}
-        contentContainerStyle={filteredProducts.length === 0 ? { flex: 1 } : {}}
+        contentContainerStyle={filteredProdutos.length === 0 ? { flex: 1 } : {}}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => {
               setRefreshing(true);
-              loadProducts();
+              loadProdutos();
             }}
             colors={['#3498db']}
           />
@@ -435,5 +459,15 @@ const styles = StyleSheet.create({
   floatingButtonText: {
     fontSize: 30,
     color: 'white',
+  },
+  offlineBanner: {
+    backgroundColor: '#e74c3c',
+    padding: 8,
+    alignItems: 'center',
+  },
+  offlineText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '500',
   },
 });

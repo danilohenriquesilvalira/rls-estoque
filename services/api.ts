@@ -142,7 +142,8 @@ export const verificarConexao = async (): Promise<boolean> => {
     });
     
     // Se a requisição foi bem-sucedida, estamos online
-    modoOffline = !response.ok;
+    const novoModoOffline = !response.ok;
+    modoOffline = novoModoOffline;
     
     if (!modoOffline) {
       log('✅ Conexão estabelecida com o servidor!');
@@ -160,6 +161,43 @@ export const verificarConexao = async (): Promise<boolean> => {
     log('Modo offline ativado devido ao erro de conexão');
     return false;
   }
+};
+
+// VALIDAÇÕES DE SEGURANÇA
+
+// Validar código de produto (evitar duplicatas)
+export const validarCodigoProduto = async (codigo: string, idExcluir?: number): Promise<boolean> => {
+  try {
+    // Verificar se o código é válido
+    if (!codigo || codigo.trim() === '') {
+      return false;
+    }
+    
+    // Buscar produtos locais
+    const produtosJson = await AsyncStorage.getItem('produtos');
+    const produtos: Produto[] = produtosJson ? JSON.parse(produtosJson) : [];
+    
+    // Verificar se já existe produto com este código (excluindo o ID atual se fornecido)
+    const produtoExistente = produtos.find(p => 
+      p.codigo === codigo && (idExcluir === undefined || p.id !== idExcluir)
+    );
+    
+    return !produtoExistente; // Retorna true se não existir (é válido)
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log('Erro ao validar código de produto:', errorMessage);
+    return false;
+  }
+};
+
+// Validar nome de produto (evitar vazio)
+export const validarNomeProduto = (nome: string): boolean => {
+  return nome && nome.trim() !== '';
+};
+
+// Validar quantidade (deve ser não-negativa)
+export const validarQuantidade = (quantidade: number): boolean => {
+  return !isNaN(quantidade) && quantidade >= 0;
 };
 
 // Funções para interagir com a API de Produtos
@@ -235,6 +273,19 @@ export const getProduto = async (id: number): Promise<Produto | null> => {
     
     const produto = await response.json();
     log(`Produto recebido do servidor: ${produto.nome}`);
+    
+    // Atualizar cache local
+    const produtosJson = await AsyncStorage.getItem('produtos');
+    if (produtosJson) {
+      const produtos: Produto[] = JSON.parse(produtosJson);
+      const index = produtos.findIndex(p => p.id === id);
+      if (index !== -1) {
+        produtos[index] = produto;
+        await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
+        log('Cache local atualizado com o produto mais recente');
+      }
+    }
+    
     return produto;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -278,6 +329,19 @@ export const getProdutoPorCodigo = async (codigo: string): Promise<Produto | nul
     
     const produto = await response.json();
     log(`Produto recebido do servidor: ${produto.nome}`);
+    
+    // Atualizar cache local
+    const produtosJson = await AsyncStorage.getItem('produtos');
+    if (produtosJson) {
+      const produtos: Produto[] = JSON.parse(produtosJson);
+      const index = produtos.findIndex(p => p.codigo === codigo);
+      if (index !== -1) {
+        produtos[index] = produto;
+        await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
+        log('Cache local atualizado com o produto mais recente');
+      }
+    }
+    
     return produto;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -295,6 +359,20 @@ export const getProdutoPorCodigo = async (codigo: string): Promise<Produto | nul
 export const criarProduto = async (produto: Produto): Promise<Produto> => {
   try {
     log('Criando novo produto:', produto);
+    
+    // Validações de segurança
+    if (!validarNomeProduto(produto.nome)) {
+      throw new Error('Nome do produto é obrigatório');
+    }
+    
+    if (!validarQuantidade(produto.quantidade)) {
+      throw new Error('Quantidade deve ser um número não-negativo');
+    }
+    
+    const codigoValido = await validarCodigoProduto(produto.codigo);
+    if (!codigoValido) {
+      throw new Error('Código já está em uso ou é inválido');
+    }
     
     // Verificar se estamos offline
     if (modoOffline) {
@@ -327,6 +405,11 @@ export const criarProduto = async (produto: Produto): Promise<Produto> => {
       await AsyncStorage.setItem('sync_queue', JSON.stringify(syncQueue));
       log('Produto adicionado à fila de sincronização');
       
+      // Se a quantidade inicial for maior que zero, registrar movimentação
+      if (produto.quantidade > 0) {
+        registrarMovimentacaoLocal(produto.id, 'entrada', produto.quantidade, 'Estoque inicial');
+      }
+      
       return produto;
     }
     
@@ -342,8 +425,14 @@ export const criarProduto = async (produto: Produto): Promise<Produto> => {
     });
     
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || `Erro ao criar produto: ${response.status} ${response.statusText}`);
+      let mensagemErro = 'Erro ao criar produto';
+      try {
+        const errorData = await response.json();
+        mensagemErro = errorData.error || `Erro ao criar produto: ${response.status} ${response.statusText}`;
+      } catch (e) {
+        mensagemErro = `Erro ao criar produto: ${response.status} ${response.statusText}`;
+      }
+      throw new Error(mensagemErro);
     }
     
     const novoProduto = await response.json();
@@ -368,12 +457,29 @@ export const atualizarProduto = async (id: number, produto: Produto): Promise<Pr
   try {
     log(`Atualizando produto ID: ${id}`, produto);
     
+    // Validações de segurança
+    if (!validarNomeProduto(produto.nome)) {
+      throw new Error('Nome do produto é obrigatório');
+    }
+    
+    if (!validarQuantidade(produto.quantidade)) {
+      throw new Error('Quantidade deve ser um número não-negativo');
+    }
+    
+    const codigoValido = await validarCodigoProduto(produto.codigo, id);
+    if (!codigoValido) {
+      throw new Error('Código já está em uso por outro produto');
+    }
+    
+    // Obter produto atual para detectar mudanças de quantidade
+    const produtosJson = await AsyncStorage.getItem('produtos');
+    const produtos: Produto[] = produtosJson ? JSON.parse(produtosJson) : [];
+    const produtoAtual = produtos.find(p => p.id === id);
+    const quantidadeAnterior = produtoAtual ? produtoAtual.quantidade : 0;
+    
     // Verificar se estamos offline
     if (modoOffline) {
       log('Modo offline: salvando localmente para sincronizar depois');
-      // Salvar localmente para sincronizar depois
-      const produtosJson = await AsyncStorage.getItem('produtos');
-      const produtos: Produto[] = produtosJson ? JSON.parse(produtosJson) : [];
       
       // Encontrar e atualizar o produto
       const index = produtos.findIndex(p => p.id === id);
@@ -382,6 +488,10 @@ export const atualizarProduto = async (id: number, produto: Produto): Promise<Pr
         throw new Error('Produto não encontrado');
       }
       
+      // Verificar mudança na quantidade
+      const diferencaQuantidade = produto.quantidade - quantidadeAnterior;
+      
+      // Atualizar dados
       produto.id = id;
       produto.data_atualizacao = new Date().toISOString();
       produtos[index] = produto;
@@ -404,6 +514,15 @@ export const atualizarProduto = async (id: number, produto: Produto): Promise<Pr
       await AsyncStorage.setItem('sync_queue', JSON.stringify(syncQueue));
       log('Produto adicionado à fila de sincronização para atualização');
       
+      // Registrar movimentação se houver mudança na quantidade
+      if (diferencaQuantidade !== 0) {
+        if (diferencaQuantidade > 0) {
+          registrarMovimentacaoLocal(id, 'entrada', diferencaQuantidade, 'Ajuste manual');
+        } else {
+          registrarMovimentacaoLocal(id, 'saida', Math.abs(diferencaQuantidade), 'Ajuste manual');
+        }
+      }
+      
       return produto;
     }
     
@@ -419,16 +538,20 @@ export const atualizarProduto = async (id: number, produto: Produto): Promise<Pr
     });
     
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || `Erro ao atualizar produto: ${response.status} ${response.statusText}`);
+      let mensagemErro = 'Erro ao atualizar produto';
+      try {
+        const errorData = await response.json();
+        mensagemErro = errorData.error || `Erro ao atualizar produto: ${response.status} ${response.statusText}`;
+      } catch (e) {
+        mensagemErro = `Erro ao atualizar produto: ${response.status} ${response.statusText}`;
+      }
+      throw new Error(mensagemErro);
     }
     
     const produtoAtualizado = await response.json();
     log('Produto atualizado com sucesso no servidor:', produtoAtualizado);
     
     // Atualizar cache local
-    const produtosJson = await AsyncStorage.getItem('produtos');
-    const produtos: Produto[] = produtosJson ? JSON.parse(produtosJson) : [];
     const index = produtos.findIndex(p => p.id === id);
     if (index !== -1) {
       produtos[index] = produtoAtualizado;
@@ -455,11 +578,18 @@ export const deletarProduto = async (id: number): Promise<void> => {
       const produtosJson = await AsyncStorage.getItem('produtos');
       const produtos: Produto[] = produtosJson ? JSON.parse(produtosJson) : [];
       
+      // Verificar se o produto existe
+      const index = produtos.findIndex(p => p.id === id);
+      if (index === -1) {
+        throw new Error('Produto não encontrado');
+      }
+      
       // Remover o produto
-      const novoProdutos = produtos.filter(p => p.id !== id);
+      const produtoRemovido = produtos[index];
+      produtos.splice(index, 1);
       
       // Salvar no AsyncStorage
-      await AsyncStorage.setItem('produtos', JSON.stringify(novoProdutos));
+      await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
       log('Produto removido localmente');
       
       // Adicionar à fila de sincronização
@@ -475,6 +605,15 @@ export const deletarProduto = async (id: number): Promise<void> => {
       await AsyncStorage.setItem('sync_queue', JSON.stringify(syncQueue));
       log('Exclusão adicionada à fila de sincronização');
       
+      // Remover movimentações locais deste produto
+      const movimentacoesJson = await AsyncStorage.getItem('movimentacoes');
+      if (movimentacoesJson) {
+        const movimentacoes: Movimentacao[] = JSON.parse(movimentacoesJson);
+        const novasMovimentacoes = movimentacoes.filter(m => m.produto_id !== id);
+        await AsyncStorage.setItem('movimentacoes', JSON.stringify(novasMovimentacoes));
+        log(`Removidas ${movimentacoes.length - novasMovimentacoes.length} movimentações do produto`);
+      }
+      
       return;
     }
     
@@ -486,8 +625,14 @@ export const deletarProduto = async (id: number): Promise<void> => {
     });
     
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || `Erro ao excluir produto: ${response.status} ${response.statusText}`);
+      let mensagemErro = 'Erro ao excluir produto';
+      try {
+        const errorData = await response.json();
+        mensagemErro = errorData.error || `Erro ao excluir produto: ${response.status} ${response.statusText}`;
+      } catch (e) {
+        mensagemErro = `Erro ao excluir produto: ${response.status} ${response.statusText}`;
+      }
+      throw new Error(mensagemErro);
     }
     
     log('Produto excluído com sucesso no servidor');
@@ -499,6 +644,15 @@ export const deletarProduto = async (id: number): Promise<void> => {
       const novoProdutos = produtos.filter(p => p.id !== id);
       await AsyncStorage.setItem('produtos', JSON.stringify(novoProdutos));
       log('Cache local atualizado após exclusão');
+    }
+    
+    // Remover movimentações locais deste produto
+    const movimentacoesJson = await AsyncStorage.getItem('movimentacoes');
+    if (movimentacoesJson) {
+      const movimentacoes: Movimentacao[] = JSON.parse(movimentacoesJson);
+      const novasMovimentacoes = movimentacoes.filter(m => m.produto_id !== id);
+      await AsyncStorage.setItem('movimentacoes', JSON.stringify(novasMovimentacoes));
+      log(`Removidas movimentações do produto localmente`);
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -576,6 +730,22 @@ export const getMovimentacoesPorProduto = async (produtoId: number): Promise<Mov
     
     const movimentacoes = await response.json();
     log(`Movimentações recebidas do servidor (${movimentacoes.length})`);
+    
+    // Armazenar no AsyncStorage para uso offline
+    // Primeiro, obter todas as movimentações existentes
+    const movimentacoesJson = await AsyncStorage.getItem('movimentacoes');
+    const todasMovimentacoes: Movimentacao[] = movimentacoesJson ? JSON.parse(movimentacoesJson) : [];
+    
+    // Remover movimentações deste produto
+    const semEsseProduto = todasMovimentacoes.filter(m => m.produto_id !== produtoId);
+    
+    // Adicionar as movimentações atualizadas
+    const novasMovimentacoes = [...semEsseProduto, ...movimentacoes];
+    
+    // Salvar no AsyncStorage
+    await AsyncStorage.setItem('movimentacoes', JSON.stringify(novasMovimentacoes));
+    log('Cache local atualizado com as movimentações do produto');
+    
     return movimentacoes;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -590,66 +760,120 @@ export const getMovimentacoesPorProduto = async (produtoId: number): Promise<Mov
   }
 };
 
+// Função auxiliar para registrar movimentação localmente
+const registrarMovimentacaoLocal = async (
+  produtoId: number, 
+  tipo: 'entrada' | 'saida', 
+  quantidade: number, 
+  notas?: string
+): Promise<Movimentacao> => {
+  // Criar nova movimentação
+  const novaMovimentacao: Movimentacao = {
+    id: Date.now(), // ID temporário
+    produto_id: produtoId,
+    tipo,
+    quantidade,
+    notas,
+    data_movimentacao: new Date().toISOString()
+  };
+  
+  // Buscar produto para dados adicionais
+  const produtosJson = await AsyncStorage.getItem('produtos');
+  const produtos: Produto[] = produtosJson ? JSON.parse(produtosJson) : [];
+  const produto = produtos.find(p => p.id === produtoId);
+  
+  if (produto) {
+    novaMovimentacao.produto_codigo = produto.codigo;
+    novaMovimentacao.produto_nome = produto.nome;
+  }
+  
+  // Adicionar à lista de movimentações
+  const movimentacoesJson = await AsyncStorage.getItem('movimentacoes');
+  const movimentacoes: Movimentacao[] = movimentacoesJson ? JSON.parse(movimentacoesJson) : [];
+  movimentacoes.push(novaMovimentacao);
+  
+  // Salvar no AsyncStorage
+  await AsyncStorage.setItem('movimentacoes', JSON.stringify(movimentacoes));
+  log(`Movimentação local registrada: ${tipo} de ${quantidade} unidades do produto ${produtoId}`);
+  
+  // Adicionar à fila de sincronização
+  const syncQueueJson = await AsyncStorage.getItem('sync_queue');
+  const syncQueue = syncQueueJson ? JSON.parse(syncQueueJson) : [];
+  
+  syncQueue.push({
+    tipo: 'criar_movimentacao',
+    dados: {
+      produto_id: produtoId,
+      tipo,
+      quantidade,
+      notas
+    },
+    data: new Date().toISOString(),
+  });
+  
+  await AsyncStorage.setItem('sync_queue', JSON.stringify(syncQueue));
+  log('Movimentação adicionada à fila de sincronização');
+  
+  return novaMovimentacao;
+};
+
 export const criarMovimentacao = async (movimentacao: Movimentacao): Promise<Movimentacao> => {
   try {
     log('Criando nova movimentação:', movimentacao);
     
+    // Validações básicas
+    if (!movimentacao.produto_id || movimentacao.produto_id <= 0) {
+      throw new Error('ID do produto é obrigatório');
+    }
+    
+    if (movimentacao.quantidade <= 0) {
+      throw new Error('Quantidade deve ser maior que zero');
+    }
+    
+    if (movimentacao.tipo !== 'entrada' && movimentacao.tipo !== 'saida') {
+      throw new Error('Tipo de movimentação deve ser "entrada" ou "saida"');
+    }
+    
+    // Verificar se o produto existe e tem estoque suficiente
+    const produtosJson = await AsyncStorage.getItem('produtos');
+    const produtos: Produto[] = produtosJson ? JSON.parse(produtosJson) : [];
+    const produto = produtos.find(p => p.id === movimentacao.produto_id);
+    
+    if (!produto) {
+      throw new Error('Produto não encontrado');
+    }
+    
+    if (movimentacao.tipo === 'saida' && produto.quantidade < movimentacao.quantidade) {
+      throw new Error('Quantidade insuficiente em estoque');
+    }
+    
     // Verificar se estamos offline
     if (modoOffline) {
-      log('Modo offline: salvando localmente para sincronizar depois');
-      // Salvar localmente para sincronizar depois
-      const movimentacoesJson = await AsyncStorage.getItem('movimentacoes');
-      const movimentacoes: Movimentacao[] = movimentacoesJson ? JSON.parse(movimentacoesJson) : [];
+      log('Modo offline: processando movimentação localmente');
       
-      // Gerar ID temporário
-      movimentacao.id = Date.now();
-      movimentacao.data_movimentacao = new Date().toISOString();
-      
-      // Adicionar à lista
-      movimentacoes.push(movimentacao);
-      
-      // Salvar no AsyncStorage
-      await AsyncStorage.setItem('movimentacoes', JSON.stringify(movimentacoes));
-      log(`Movimentação salva localmente. ID Temp: ${movimentacao.id}`);
+      // Registrar movimentação
+      const novaMovimentacao = await registrarMovimentacaoLocal(
+        movimentacao.produto_id,
+        movimentacao.tipo,
+        movimentacao.quantidade,
+        movimentacao.notas
+      );
       
       // Atualizar quantidade do produto
-      const produtosJson = await AsyncStorage.getItem('produtos');
-      const produtos: Produto[] = produtosJson ? JSON.parse(produtosJson) : [];
-      
-      const produto = produtos.find(p => p.id === movimentacao.produto_id);
-      if (produto) {
-        log(`Atualizando quantidade do produto ID: ${produto.id}, Nome: ${produto.nome}`);
-        log(`Quantidade anterior: ${produto.quantidade}`);
-        
+      const index = produtos.findIndex(p => p.id === movimentacao.produto_id);
+      if (index !== -1) {
         if (movimentacao.tipo === 'entrada') {
-          produto.quantidade += movimentacao.quantidade;
-          log(`Nova quantidade após entrada (+${movimentacao.quantidade}): ${produto.quantidade}`);
+          produtos[index].quantidade += movimentacao.quantidade;
         } else {
-          produto.quantidade -= movimentacao.quantidade;
-          if (produto.quantidade < 0) produto.quantidade = 0;
-          log(`Nova quantidade após saída (-${movimentacao.quantidade}): ${produto.quantidade}`);
+          produtos[index].quantidade -= movimentacao.quantidade;
+          if (produtos[index].quantidade < 0) produtos[index].quantidade = 0;
         }
         
         await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
-        log('Quantidade do produto atualizada no cache local');
-      } else {
-        log(`Produto não encontrado no cache (ID: ${movimentacao.produto_id})`);
+        log(`Quantidade do produto atualizada: ${produtos[index].quantidade}`);
       }
       
-      // Adicionar à fila de sincronização
-      const syncQueueJson = await AsyncStorage.getItem('sync_queue');
-      const syncQueue = syncQueueJson ? JSON.parse(syncQueueJson) : [];
-      
-      syncQueue.push({
-        tipo: 'criar_movimentacao',
-        dados: movimentacao,
-        data: new Date().toISOString(),
-      });
-      
-      await AsyncStorage.setItem('sync_queue', JSON.stringify(syncQueue));
-      log('Movimentação adicionada à fila de sincronização');
-      
-      return movimentacao;
+      return novaMovimentacao;
     }
     
     // Fazer requisição à API
@@ -664,42 +888,45 @@ export const criarMovimentacao = async (movimentacao: Movimentacao): Promise<Mov
     });
     
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || `Erro ao registrar movimentação: ${response.status} ${response.statusText}`);
+      let mensagemErro = 'Erro ao registrar movimentação';
+      try {
+        const errorData = await response.json();
+        mensagemErro = errorData.error || `Erro ao registrar movimentação: ${response.status} ${response.statusText}`;
+      } catch (e) {
+        mensagemErro = `Erro ao registrar movimentação: ${response.status} ${response.statusText}`;
+      }
+      throw new Error(mensagemErro);
     }
     
     const novaMovimentacao = await response.json();
     log('Movimentação criada com sucesso no servidor:', novaMovimentacao);
     
-    // Atualizar cache local
+    // Atualizar cache local - movimentações
     const movimentacoesJson = await AsyncStorage.getItem('movimentacoes');
     const movimentacoes: Movimentacao[] = movimentacoesJson ? JSON.parse(movimentacoesJson) : [];
+    
+    // Adicionar informações do produto
+    if (produto) {
+      novaMovimentacao.produto_codigo = produto.codigo;
+      novaMovimentacao.produto_nome = produto.nome;
+    }
+    
     movimentacoes.push(novaMovimentacao);
     await AsyncStorage.setItem('movimentacoes', JSON.stringify(movimentacoes));
     log('Cache local atualizado com a nova movimentação');
     
-    // Também atualizar a quantidade do produto no cache
-    const produtosJson = await AsyncStorage.getItem('produtos');
-    if (produtosJson) {
-      const produtos: Produto[] = JSON.parse(produtosJson);
-      const index = produtos.findIndex(p => p.id === movimentacao.produto_id);
-      
-      if (index !== -1) {
-        log(`Atualizando quantidade do produto no cache: ${produtos[index].nome}`);
-        log(`Quantidade anterior: ${produtos[index].quantidade}`);
-        
-        if (movimentacao.tipo === 'entrada') {
-          produtos[index].quantidade += movimentacao.quantidade;
-          log(`Nova quantidade após entrada: ${produtos[index].quantidade}`);
-        } else {
-          produtos[index].quantidade -= movimentacao.quantidade;
-          if (produtos[index].quantidade < 0) produtos[index].quantidade = 0;
-          log(`Nova quantidade após saída: ${produtos[index].quantidade}`);
-        }
-        
-        await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
-        log('Quantidade do produto atualizada no cache local');
+    // Atualizar quantidade do produto no cache
+    const index = produtos.findIndex(p => p.id === movimentacao.produto_id);
+    if (index !== -1) {
+      if (movimentacao.tipo === 'entrada') {
+        produtos[index].quantidade += movimentacao.quantidade;
+      } else {
+        produtos[index].quantidade -= movimentacao.quantidade;
+        if (produtos[index].quantidade < 0) produtos[index].quantidade = 0;
       }
+      
+      await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
+      log(`Quantidade do produto atualizada no cache: ${produtos[index].quantidade}`);
     }
     
     return novaMovimentacao;
@@ -783,6 +1010,21 @@ export const getConfiguracao = async (chave: string): Promise<Configuracao | nul
     
     const configuracao = await response.json();
     log(`Configuração recebida do servidor: ${configuracao.chave}=${configuracao.valor}`);
+    
+    // Atualizar cache local
+    const configuracoesJson = await AsyncStorage.getItem('configuracoes');
+    const configuracoes: Configuracao[] = configuracoesJson ? JSON.parse(configuracoesJson) : [];
+    const index = configuracoes.findIndex(c => c.chave === chave);
+    
+    if (index !== -1) {
+      configuracoes[index] = configuracao;
+    } else {
+      configuracoes.push(configuracao);
+    }
+    
+    await AsyncStorage.setItem('configuracoes', JSON.stringify(configuracoes));
+    log('Cache local atualizado com a configuração');
+    
     return configuracao;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -859,8 +1101,14 @@ export const atualizarConfiguracao = async (chave: string, valor: string): Promi
     });
     
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || `Erro ao atualizar configuração: ${response.status} ${response.statusText}`);
+      let mensagemErro = 'Erro ao atualizar configuração';
+      try {
+        const errorData = await response.json();
+        mensagemErro = errorData.error || `Erro ao atualizar configuração: ${response.status} ${response.statusText}`;
+      } catch (e) {
+        mensagemErro = `Erro ao atualizar configuração: ${response.status} ${response.statusText}`;
+      }
+      throw new Error(mensagemErro);
     }
     
     const configuracaoAtualizada = await response.json();
@@ -923,8 +1171,8 @@ export const getDashboardData = async (): Promise<DashboardData> => {
             quantidade: m.quantidade,
             data_movimentacao: m.data_movimentacao || new Date().toISOString(),
             notas: m.notas,
-            produto_codigo: produto?.codigo || 'N/A',
-            produto_nome: produto?.nome || 'Produto desconhecido',
+            produto_codigo: m.produto_codigo || produto?.codigo || 'N/A',
+            produto_nome: m.produto_nome || produto?.nome || 'Produto desconhecido',
           };
         });
       
@@ -967,12 +1215,37 @@ export const getDashboardData = async (): Promise<DashboardData> => {
     const produtosJson = await AsyncStorage.getItem('produtos');
     const produtos: Produto[] = produtosJson ? JSON.parse(produtosJson) : [];
     
+    const movimentacoesJson = await AsyncStorage.getItem('movimentacoes');
+    const movimentacoes: Movimentacao[] = movimentacoesJson ? JSON.parse(movimentacoesJson) : [];
+    
+    // Compilar dados básicos
     return {
       total_produtos: produtos.length,
       total_itens: produtos.reduce((sum, p) => sum + p.quantidade, 0),
       estoque_baixo: produtos.filter(p => p.quantidade < (p.quantidade_minima || 5)).length,
-      ultimas_movimentacoes: [],
-      top_produtos: [],
+      ultimas_movimentacoes: movimentacoes
+        .sort((a, b) => new Date(b.data_movimentacao || '').getTime() - new Date(a.data_movimentacao || '').getTime())
+        .slice(0, 10)
+        .map(m => {
+          const produto = produtos.find(p => p.id === m.produto_id);
+          return {
+            id: m.id,
+            tipo: m.tipo,
+            quantidade: m.quantidade,
+            data_movimentacao: m.data_movimentacao || new Date().toISOString(),
+            notas: m.notas,
+            produto_codigo: produto?.codigo || 'N/A',
+            produto_nome: produto?.nome || 'Produto desconhecido',
+          };
+        }),
+      top_produtos: produtos
+        .sort((a, b) => b.quantidade - a.quantidade)
+        .slice(0, 5)
+        .map(p => ({
+          codigo: p.codigo,
+          nome: p.nome,
+          quantidade: p.quantidade,
+        })),
     };
   }
 };
@@ -1034,6 +1307,13 @@ export const sincronizarDados = async (): Promise<{
             });
             
             if (!produtoResponse.ok) {
+              // Verificar se é um erro de código duplicado
+              if (produtoResponse.status === 409) {
+                log('Produto com código já existente no servidor, considerando como sucesso');
+                sincronizados++;
+                break;
+              }
+              
               const errorData = await produtoResponse.json();
               log(`Erro ao criar produto no servidor: ${errorData.error || produtoResponse.statusText}`);
               throw new Error(`Erro ao criar produto: ${errorData.error || produtoResponse.statusText}`);
@@ -1052,6 +1332,13 @@ export const sincronizarDados = async (): Promise<{
             });
             
             if (!atualizarResponse.ok) {
+              // Se o produto não existe mais no servidor, pular
+              if (atualizarResponse.status === 404) {
+                log('Produto não existe mais no servidor, ignorando atualização');
+                sincronizados++;
+                break;
+              }
+              
               const errorData = await atualizarResponse.json();
               log(`Erro ao atualizar produto no servidor: ${errorData.error || atualizarResponse.statusText}`);
               throw new Error(`Erro ao atualizar produto: ${errorData.error || atualizarResponse.statusText}`);
@@ -1204,8 +1491,18 @@ export const sincronizarDados = async (): Promise<{
 export const definirServidor = async (ip: string, porta: string = '8080'): Promise<boolean> => {
   try {
     log(`Definindo novo servidor: ${ip}:${porta}`);
+    
+    // Validar IP básico
+    if (!ip || ip.trim() === '') {
+      throw new Error('Endereço IP é obrigatório');
+    }
+    
+    // Salvar configurações
     await AsyncStorage.setItem('@server_ip', ip);
     await AsyncStorage.setItem('@server_port', porta);
+    
+    // Resetar status offline
+    modoOffline = true;
     
     // Testar a conexão com o novo servidor
     const resultado = await verificarConexao();
@@ -1214,7 +1511,7 @@ export const definirServidor = async (ip: string, porta: string = '8080'): Promi
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log('Erro ao definir servidor:', errorMessage);
-    return false;
+    throw error;
   }
 };
 
@@ -1249,5 +1546,8 @@ export default {
   getDashboardData,
   sincronizarDados,
   definirServidor,
-  obterEnderecoServidor
+  obterEnderecoServidor,
+  validarCodigoProduto,
+  validarNomeProduto,
+  validarQuantidade
 };

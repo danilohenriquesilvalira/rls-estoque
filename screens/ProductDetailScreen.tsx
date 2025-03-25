@@ -12,85 +12,104 @@ import {
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
+import { getProduto, atualizarProduto, deletarProduto, criarMovimentacao, getMovimentacoesPorProduto } from '../services/api';
 
 // Definição dos tipos para navegação e rota
 type ProductDetailScreenProps = {
   navigation: NativeStackNavigationProp<any, 'ProductDetail'>;
-  route: RouteProp<{ ProductDetail: { product: Product } }, 'ProductDetail'>;
+  route: RouteProp<{ ProductDetail: { product: Produto } }, 'ProductDetail'>;
 };
 
 // Interface para o produto
-interface Product {
-  code: string;
-  name: string;
-  description?: string;
-  quantity: number;
+interface Produto {
+  id?: number;
+  codigo: string;
+  nome: string;
+  descricao?: string;
+  quantidade: number;
+  quantidade_minima?: number;
+  localizacao?: string;
+  fornecedor?: string;
+  notas?: string;
+  data_criacao?: string;
+  data_atualizacao?: string;
 }
 
 // Interface para registro de movimento
-interface MovementRecord {
-  date: string;
-  type: 'in' | 'out';
-  quantity: number;
-  notes?: string;
-}
-
-// Interface para histórico completo do produto
-interface ProductHistory {
-  productCode: string;
-  movements: MovementRecord[];
+interface Movimentacao {
+  id?: number;
+  produto_id: number;
+  tipo: 'entrada' | 'saida';
+  quantidade: number;
+  notas?: string;
+  data_movimentacao?: string;
+  produto_codigo?: string;
+  produto_nome?: string;
 }
 
 export default function ProductDetailScreen({ route, navigation }: ProductDetailScreenProps) {
   const { product } = route.params;
-  const [quantity, setQuantity] = useState(product.quantity || 0);
+  const [produto, setProduto] = useState<Produto>(product);
   const [isEditing, setIsEditing] = useState(false);
-  const [editedName, setEditedName] = useState(product.name);
-  const [editedDescription, setEditedDescription] = useState(product.description || '');
+  const [editedName, setEditedName] = useState(product.nome);
+  const [editedDescription, setEditedDescription] = useState(product.descricao || '');
+  const [quantity, setQuantity] = useState(product.quantidade);
   const [saving, setSaving] = useState(false);
   const [showMovementModal, setShowMovementModal] = useState(false);
-  const [movementType, setMovementType] = useState<'in' | 'out'>('in');
+  const [movementType, setMovementType] = useState<'entrada' | 'saida'>('entrada');
   const [movementQuantity, setMovementQuantity] = useState('1');
   const [movementNotes, setMovementNotes] = useState('');
-  const [movements, setMovements] = useState<MovementRecord[]>([]);
+  const [movements, setMovements] = useState<Movimentacao[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [deleting, setDeleting] = useState(false);
 
-  // Carregar histórico do produto
+  // Carregar detalhes atualizados do produto e seu histórico
   useEffect(() => {
-    const loadProductHistory = async () => {
+    const loadProductDetails = async () => {
       try {
-        setLoadingHistory(true);
-        const historyJson = await AsyncStorage.getItem('productHistory');
-        
-        if (historyJson) {
-          const allHistory: ProductHistory[] = JSON.parse(historyJson);
-          const productHistory = allHistory.find(h => h.productCode === product.code);
-          
-          if (productHistory) {
-            // Ordenar movimentos do mais recente para o mais antigo
-            const sortedMovements = [...productHistory.movements].sort(
-              (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-            );
-            setMovements(sortedMovements);
-          } else {
-            setMovements([]);
+        // Verificar se temos ID do produto para buscar detalhes atualizados
+        if (produto.id) {
+          const updatedProduct = await getProduto(produto.id);
+          if (updatedProduct) {
+            setProduto(updatedProduct);
+            setQuantity(updatedProduct.quantidade);
+            setEditedName(updatedProduct.nome);
+            setEditedDescription(updatedProduct.descricao || '');
           }
-        } else {
-          setMovements([]);
         }
+        
+        // Buscar movimentações
+        loadMovements();
       } catch (error) {
-        console.error("Erro ao carregar histórico:", error);
-        Alert.alert("Erro", "Não foi possível carregar o histórico do produto");
-      } finally {
-        setLoadingHistory(false);
+        console.error("Erro ao carregar detalhes do produto:", error);
       }
     };
     
-    loadProductHistory();
-  }, [product.code]);
+    loadProductDetails();
+  }, [produto.id]);
+
+  const loadMovements = async () => {
+    setLoadingHistory(true);
+    try {
+      if (produto.id) {
+        const movementData = await getMovimentacoesPorProduto(produto.id);
+        // Ordenar do mais recente para o mais antigo
+        const sortedMovements = movementData.sort(
+          (a, b) => new Date(b.data_movimentacao || '').getTime() - new Date(a.data_movimentacao || '').getTime()
+        );
+        setMovements(sortedMovements);
+      } else {
+        setMovements([]);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar histórico:", error);
+      Alert.alert("Erro", "Não foi possível carregar o histórico do produto");
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
 
   // Salvar alterações no produto
   const saveChanges = async () => {
@@ -102,40 +121,31 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
     try {
       setSaving(true);
       
-      // Recuperar lista atual
-      const jsonValue = await AsyncStorage.getItem('products');
-      let productsList: Product[] = jsonValue != null ? JSON.parse(jsonValue) : [];
+      const updatedProduct: Produto = {
+        ...produto,
+        nome: editedName.trim(),
+        descricao: editedDescription.trim() || undefined,
+        quantidade: quantity
+      };
       
-      // Encontrar e atualizar o produto
-      const updatedList = productsList.map(item => {
-        if (item.code === product.code) {
-          return { 
-            ...item, 
-            name: editedName.trim(),
-            description: editedDescription.trim(),
-            quantity 
-          };
-        }
-        return item;
-      });
-      
-      // Salvar lista atualizada
-      await AsyncStorage.setItem('products', JSON.stringify(updatedList));
-      
-      // Atualizar o objeto do produto na rota também
-      navigation.setParams({
-        product: {
-          ...product,
-          name: editedName.trim(),
-          description: editedDescription.trim(),
-          quantity
-        }
-      });
-      
-      Alert.alert("Sucesso", "Produto atualizado com sucesso");
-      setIsEditing(false);
+      // Usar a função de API para atualizar
+      if (produto.id) {
+        const result = await atualizarProduto(produto.id, updatedProduct);
+        
+        // Atualizar o estado local
+        setProduto(result);
+        
+        // Atualizar os parâmetros de rota
+        navigation.setParams({ product: result });
+        
+        Alert.alert("Sucesso", "Produto atualizado com sucesso");
+        setIsEditing(false);
+      } else {
+        Alert.alert("Erro", "Produto sem ID válido");
+      }
     } catch (e) {
-      Alert.alert("Erro", "Não foi possível salvar as alterações");
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      Alert.alert("Erro", `Não foi possível salvar as alterações: ${errorMessage}`);
       console.error(e);
     } finally {
       setSaving(false);
@@ -151,72 +161,47 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
       return;
     }
 
-    if (movementType === 'out' && quantityNum > quantity) {
+    if (movementType === 'saida' && quantityNum > quantity) {
       Alert.alert("Erro", "Quantidade de saída maior que o estoque disponível");
       return;
     }
 
+    // Garantir que produto_id seja um número válido
+    if (!produto.id) {
+      Alert.alert("Erro", "ID do produto não encontrado");
+      return;
+    }
+
     // Criar registro de movimento
-    const newMovement: MovementRecord = {
-      date: new Date().toISOString(),
-      type: movementType,
-      quantity: quantityNum,
-      notes: movementNotes.trim() || undefined
+    const newMovement: Movimentacao = {
+      produto_id: produto.id,
+      tipo: movementType,
+      quantidade: quantityNum,
+      notas: movementNotes.trim() || undefined
     };
 
     try {
-      // Atualizar o histórico
-      const historyJson = await AsyncStorage.getItem('productHistory');
-      let allHistory: ProductHistory[] = [];
+      // Usar a função da API para registrar movimentação
+      await criarMovimentacao(newMovement);
       
-      if (historyJson) {
-        allHistory = JSON.parse(historyJson);
-        const productHistoryIndex = allHistory.findIndex(h => h.productCode === product.code);
-        
-        if (productHistoryIndex >= 0) {
-          // Adicionar ao histórico existente
-          allHistory[productHistoryIndex].movements.push(newMovement);
-        } else {
-          // Criar novo histórico para este produto
-          allHistory.push({
-            productCode: product.code,
-            movements: [newMovement]
-          });
-        }
-      } else {
-        // Criar primeiro histórico
-        allHistory = [{
-          productCode: product.code,
-          movements: [newMovement]
-        }];
-      }
-      
-      // Salvar histórico atualizado
-      await AsyncStorage.setItem('productHistory', JSON.stringify(allHistory));
-      
-      // Atualizar a quantidade do produto
-      const newQuantity = movementType === 'in' 
+      // Atualizar a quantidade localmente
+      const newQuantity = movementType === 'entrada' 
         ? quantity + quantityNum 
         : quantity - quantityNum;
       
-      // Atualizar no estado local
       setQuantity(newQuantity);
       
-      // Atualizar no AsyncStorage
-      const jsonValue = await AsyncStorage.getItem('products');
-      let productsList: Product[] = jsonValue != null ? JSON.parse(jsonValue) : [];
+      // Atualizar o produto com a nova quantidade
+      const updatedProduct = {
+        ...produto,
+        quantidade: newQuantity
+      };
       
-      const updatedList = productsList.map(item => {
-        if (item.code === product.code) {
-          return { ...item, quantity: newQuantity };
-        }
-        return item;
-      });
+      setProduto(updatedProduct);
+      navigation.setParams({ product: updatedProduct });
       
-      await AsyncStorage.setItem('products', JSON.stringify(updatedList));
-      
-      // Atualizar o estado local dos movimentos
-      setMovements([newMovement, ...movements]);
+      // Atualizar movimentos
+      loadMovements();
       
       // Resetar o modal
       setMovementQuantity('1');
@@ -225,11 +210,12 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
       
       Alert.alert(
         "Sucesso", 
-        `${movementType === 'in' ? 'Entrada' : 'Saída'} registrada com sucesso`
+        `${movementType === 'entrada' ? 'Entrada' : 'Saída'} registrada com sucesso`
       );
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error("Erro ao registrar movimento:", error);
-      Alert.alert("Erro", "Não foi possível registrar o movimento");
+      Alert.alert("Erro", `Não foi possível registrar o movimento: ${errorMessage}`);
     }
   };
 
@@ -247,29 +233,29 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
           text: "Excluir",
           onPress: async () => {
             try {
-              // Recuperar lista atual
-              const jsonValue = await AsyncStorage.getItem('products');
-              let productsList: Product[] = jsonValue != null ? JSON.parse(jsonValue) : [];
+              setDeleting(true);
               
-              // Filtrar o produto a ser removido
-              const updatedList = productsList.filter(item => item.code !== product.code);
-              
-              // Salvar lista atualizada
-              await AsyncStorage.setItem('products', JSON.stringify(updatedList));
-              
-              // Também remover o histórico ao excluir um produto (opcional)
-              const historyJson = await AsyncStorage.getItem('productHistory');
-              if (historyJson) {
-                const allHistory: ProductHistory[] = JSON.parse(historyJson);
-                const updatedHistory = allHistory.filter(h => h.productCode !== product.code);
-                await AsyncStorage.setItem('productHistory', JSON.stringify(updatedHistory));
+              // Se o produto tem ID, tenta excluir no servidor
+              if (produto.id) {
+                await deletarProduto(produto.id);
               }
               
-              Alert.alert("Sucesso", "Produto excluído com sucesso");
-              navigation.goBack();
+              Alert.alert(
+                "Sucesso", 
+                "Produto excluído com sucesso",
+                [
+                  {
+                    text: "OK",
+                    onPress: () => navigation.goBack()
+                  }
+                ]
+              );
             } catch (e) {
-              Alert.alert("Erro", "Não foi possível excluir o produto");
+              const errorMessage = e instanceof Error ? e.message : String(e);
+              Alert.alert("Erro", `Não foi possível excluir o produto: ${errorMessage}`);
               console.error(e);
+            } finally {
+              setDeleting(false);
             }
           },
           style: "destructive"
@@ -293,7 +279,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.card}>
           <View style={styles.header}>
-            <Text style={styles.codeLabel}>Código: {product.code}</Text>
+            <Text style={styles.codeLabel}>Código: {produto.codigo}</Text>
             
             {!isEditing ? (
               <TouchableOpacity 
@@ -307,8 +293,8 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
                 style={styles.cancelButton}
                 onPress={() => {
                   setIsEditing(false);
-                  setEditedName(product.name);
-                  setEditedDescription(product.description || '');
+                  setEditedName(produto.nome);
+                  setEditedDescription(produto.descricao || '');
                 }}
               >
                 <Text style={styles.cancelButtonText}>Cancelar</Text>
@@ -353,11 +339,11 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
             // Modo de visualização
             <View>
               <Text style={styles.label}>Nome:</Text>
-              <Text style={styles.value}>{product.name}</Text>
+              <Text style={styles.value}>{produto.nome}</Text>
               
               <Text style={styles.label}>Descrição:</Text>
               <Text style={styles.value}>
-                {product.description || "Nenhuma descrição disponível"}
+                {produto.descricao || "Nenhuma descrição disponível"}
               </Text>
             </View>
           )}
@@ -388,7 +374,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
             <TouchableOpacity 
               style={[styles.actionButton, styles.entryButton]}
               onPress={() => {
-                setMovementType('in');
+                setMovementType('entrada');
                 setShowMovementModal(true);
               }}
             >
@@ -402,7 +388,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
                 quantity <= 0 && styles.disabledButton
               ]}
               onPress={() => {
-                setMovementType('out');
+                setMovementType('saida');
                 setShowMovementModal(true);
               }}
               disabled={quantity <= 0}
@@ -428,22 +414,22 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
                 <View style={styles.movementHeader}>
                   <Text style={[
                     styles.movementType,
-                    movement.type === 'in' ? styles.entryText : styles.exitText
+                    movement.tipo === 'entrada' ? styles.entryText : styles.exitText
                   ]}>
-                    {movement.type === 'in' ? 'ENTRADA' : 'SAÍDA'}
+                    {movement.tipo === 'entrada' ? 'ENTRADA' : 'SAÍDA'}
                   </Text>
                   <Text style={styles.movementDate}>
-                    {formatDateTime(movement.date)}
+                    {formatDateTime(movement.data_movimentacao || new Date().toISOString())}
                   </Text>
                 </View>
                 
                 <View style={styles.movementDetails}>
                   <Text style={styles.movementQuantity}>
-                    {movement.type === 'in' ? '+' : '-'}{movement.quantity} unidades
+                    {movement.tipo === 'entrada' ? '+' : '-'}{movement.quantidade} unidades
                   </Text>
-                  {movement.notes && (
+                  {movement.notas && (
                     <Text style={styles.movementNotes}>
-                      Obs: {movement.notes}
+                      Obs: {movement.notas}
                     </Text>
                   )}
                 </View>
@@ -455,8 +441,13 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
         <TouchableOpacity 
           style={styles.deleteButton}
           onPress={deleteProduct}
+          disabled={deleting}
         >
-          <Text style={styles.deleteButtonText}>Excluir Produto</Text>
+          {deleting ? (
+            <ActivityIndicator size="small" color="white" />
+          ) : (
+            <Text style={styles.deleteButtonText}>Excluir Produto</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
       
@@ -469,7 +460,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>
-              {movementType === 'in' ? 'Registrar Entrada' : 'Registrar Saída'}
+              {movementType === 'entrada' ? 'Registrar Entrada' : 'Registrar Saída'}
             </Text>
             
             <Text style={styles.modalLabel}>Quantidade:</Text>
@@ -506,7 +497,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
               <TouchableOpacity 
                 style={[
                   styles.modalConfirmButton,
-                  movementType === 'in' ? styles.entryButton : styles.exitButton
+                  movementType === 'entrada' ? styles.entryButton : styles.exitButton
                 ]}
                 onPress={registerMovement}
               >

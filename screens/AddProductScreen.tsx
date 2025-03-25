@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -14,22 +14,23 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { criarProduto } from '../services/api';
 
 // Definição do tipo para as propriedades de navegação
 type AddProductScreenProps = {
   navigation: NativeStackNavigationProp<any, 'AddProduct'>;
 };
 
-// Interface para o produto
-interface Product {
-  code: string;
-  name: string;
-  description: string;
-  quantity: number;
-  minStockLevel?: number;
-  location?: string;
-  supplier?: string;
-  notes?: string;
+// Interface para o produto (formato da API)
+interface Produto {
+  codigo: string;
+  nome: string;
+  descricao?: string;
+  quantidade: number;
+  quantidade_minima?: number;
+  localizacao?: string;
+  fornecedor?: string;
+  notas?: string;
 }
 
 export default function AddProductScreen({ navigation }: AddProductScreenProps) {
@@ -45,22 +46,40 @@ export default function AddProductScreen({ navigation }: AddProductScreenProps) 
   const [saving, setSaving] = useState(false);
   const [autoGenerateCode, setAutoGenerateCode] = useState(false);
 
+  // Carregar configurações do usuário
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const settingsJson = await AsyncStorage.getItem('@app_settings');
+        if (settingsJson) {
+          const settings = JSON.parse(settingsJson);
+          // Usar a configuração salva ou padrão para true
+          setAutoGenerateCode(settings.autoGenerateCode ?? true);
+        }
+      } catch (error) {
+        console.error("Erro ao carregar configurações:", error);
+      }
+    };
+    
+    loadSettings();
+  }, []);
+
   // Gerar código automático
   const generateProductCode = async () => {
     try {
-      // Recuperar lista atual para encontrar o último código
-      const jsonValue = await AsyncStorage.getItem('products');
-      let productsList: Product[] = jsonValue != null ? JSON.parse(jsonValue) : [];
+      // Usar a chave correta 'produtos' em vez de 'products'
+      const jsonValue = await AsyncStorage.getItem('produtos');
+      let produtosList: Produto[] = jsonValue != null ? JSON.parse(jsonValue) : [];
       
       // Se não há produtos, começar com 1001
-      if (productsList.length === 0) {
+      if (produtosList.length === 0) {
         setCode('1001');
         return;
       }
       
       // Encontrar o maior código numérico
-      const numericCodes = productsList
-        .map(item => parseInt(item.code))
+      const numericCodes = produtosList
+        .map(item => parseInt(item.codigo))
         .filter(code => !isNaN(code));
       
       if (numericCodes.length === 0) {
@@ -94,69 +113,31 @@ export default function AddProductScreen({ navigation }: AddProductScreenProps) 
       return;
     }
 
-    const newProduct: Product = {
-      code: code.trim(),
-      name: name.trim(),
-      description: description.trim(),
-      quantity: parseInt(quantity) || 0
+    // Criar objeto de produto no formato esperado pela API
+    const novoProduto: Produto = {
+      codigo: code.trim(),
+      nome: name.trim(),
+      descricao: description.trim() || undefined,
+      quantidade: parseInt(quantity) || 0
     };
 
     // Adicionar campos opcionais se preenchidos
-    if (location.trim()) newProduct.location = location.trim();
-    if (supplier.trim()) newProduct.supplier = supplier.trim();
-    if (notes.trim()) newProduct.notes = notes.trim();
+    if (location.trim()) novoProduto.localizacao = location.trim();
+    if (supplier.trim()) novoProduto.fornecedor = supplier.trim();
+    if (notes.trim()) novoProduto.notas = notes.trim();
     if (minStockLevel.trim()) {
       const minStock = parseInt(minStockLevel);
       if (!isNaN(minStock) && minStock >= 0) {
-        newProduct.minStockLevel = minStock;
+        novoProduto.quantidade_minima = minStock;
       }
     }
 
     try {
       setSaving(true);
       
-      // Recuperar lista atual
-      const jsonValue = await AsyncStorage.getItem('products');
-      let productsList: Product[] = jsonValue != null ? JSON.parse(jsonValue) : [];
-      
-      // Verificar se o código já existe
-      if (productsList.some(item => item.code === newProduct.code)) {
-        Alert.alert("Erro", "Já existe um produto com este código");
-        setSaving(false);
-        return;
-      }
-      
-      // Adicionar novo produto e salvar
-      productsList.push(newProduct);
-      await AsyncStorage.setItem('products', JSON.stringify(productsList));
-      
-      // Registrar a entrada inicial no histórico se a quantidade for maior que zero
-      if (newProduct.quantity > 0) {
-        try {
-          const historyJson = await AsyncStorage.getItem('productHistory');
-          let allHistory = [];
-          
-          if (historyJson) {
-            allHistory = JSON.parse(historyJson);
-          }
-          
-          // Adicionar registro para este produto
-          allHistory.push({
-            productCode: newProduct.code,
-            movements: [{
-              date: new Date().toISOString(),
-              type: 'in',
-              quantity: newProduct.quantity,
-              notes: 'Estoque inicial'
-            }]
-          });
-          
-          await AsyncStorage.setItem('productHistory', JSON.stringify(allHistory));
-        } catch (historyError) {
-          console.error("Erro ao registrar histórico inicial:", historyError);
-          // Continuar mesmo se o histórico falhar
-        }
-      }
+      // Usar o serviço de API para criar o produto
+      // Este serviço já lida com modo offline e sincronização
+      await criarProduto(novoProduto);
       
       Alert.alert(
         "Sucesso", 
@@ -184,9 +165,10 @@ export default function AddProductScreen({ navigation }: AddProductScreenProps) 
           }
         ]
       );
-    } catch (e) {
-      Alert.alert("Erro", "Não foi possível salvar o produto");
-      console.error(e);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      Alert.alert("Erro", `Não foi possível salvar o produto: ${errorMessage}`);
+      console.error("Erro ao salvar produto:", error);
     } finally {
       setSaving(false);
     }

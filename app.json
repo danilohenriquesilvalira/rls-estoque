@@ -1,3 +1,4 @@
+
 {
   "expo": {
     "name": "RLS Estoque",
@@ -5,11 +6,13 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#1565C0"
+    },
+    "updates": {
+      "fallbackToCacheTimeout": 0
     },
     "assetBundlePatterns": [
       "**/*"
@@ -28,25 +31,17 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "newArchEnabled": true,
-    "plugins": [
-      [
-        "expo-barcode-scanner",
-        {
-          "cameraPermission": "O aplicativo RLS Estoque precisa acessar sua câmera para escanear códigos QR."
-        }
-      ],
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "O aplicativo RLS Estoque precisa acessar sua câmera."
-        }
-      ]
-    ],
     "extra": {
       "eas": {
-        "projectId": "93d7ba51-c680-4688-9395-1e54aa4a11d3"
+        "projectId": "seu-projeto-id-aqui"
       }
+    },
+    
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "experiments": {
+      "tsconfigPaths": true
     }
   }
 }

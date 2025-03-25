@@ -7,38 +7,71 @@ import {
   Dimensions,
   TouchableOpacity,
   ActivityIndicator,
-  SafeAreaView
+  SafeAreaView,
+  Alert
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
 import Header from '../components/Header';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
+import { getProdutos, getMovimentacoes, getDashboardData, verificarConexao } from '../services/api';
 
 type DashboardScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Dashboard'>;
 };
 
 // Interface para o produto
-interface Product {
-  code: string;
-  name: string;
-  description?: string;
-  quantity: number;
+interface Produto {
+  id?: number;
+  codigo: string;
+  nome: string;
+  descricao?: string;
+  quantidade: number;
+  quantidade_minima?: number;
+  localizacao?: string;
+  fornecedor?: string;
+  notas?: string;
+  data_criacao?: string;
+  data_atualizacao?: string;
 }
 
 // Interface para registro de movimento
-interface MovementRecord {
-  date: string;
-  type: 'in' | 'out';
-  quantity: number;
-  notes?: string;
+interface Movimentacao {
+  id?: number;
+  produto_id: number;
+  tipo: 'entrada' | 'saida';
+  quantidade: number;
+  notas?: string;
+  data_movimentacao?: string;
+  produto_codigo?: string;
+  produto_nome?: string;
 }
 
 // Interface para histórico completo do produto
-interface ProductHistory {
-  productCode: string;
-  movements: MovementRecord[];
+interface MovimentacaoView {
+  id?: number;
+  tipo: string;
+  quantidade: number;
+  data_movimentacao: string;
+  notas?: string;
+  produto_codigo: string;
+  produto_nome: string;
+}
+
+// Interface para dados simplificados de produtos
+interface ProdutoView {
+  codigo: string;
+  nome: string;
+  quantidade: number;
+}
+
+// Interface para dados do dashboard
+interface DashboardData {
+  total_produtos: number;
+  total_itens: number;
+  estoque_baixo: number;
+  ultimas_movimentacoes: MovimentacaoView[];
+  top_produtos: ProdutoView[];
 }
 
 // Definir cores do tema
@@ -74,8 +107,9 @@ const screenWidth = Dimensions.get('window').width;
 
 const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
   const [loading, setLoading] = useState(true);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [movements, setMovements] = useState<MovementRecord[]>([]);
+  const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [movimentos, setMovimentos] = useState<Movimentacao[]>([]);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [stockStatus, setStockStatus] = useState({
     low: 0,
     normal: 0,
@@ -83,6 +117,8 @@ const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
   });
   const [selectedChart, setSelectedChart] = useState('movimento');
   const [totalValue, setTotalValue] = useState(0);
+  const [isOnline, setIsOnline] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
 
   // Carregar dados para o dashboard
   useEffect(() => {
@@ -90,49 +126,67 @@ const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
       try {
         setLoading(true);
         
-        // Carregar produtos
-        const productsJson = await AsyncStorage.getItem('products');
-        const productsList: Product[] = productsJson ? JSON.parse(productsJson) : [];
-        setProducts(productsList);
-        
-        // Calcular status de estoque
-        const lowStock = productsList.filter(p => p.quantity < 5).length;
-        const highStock = productsList.filter(p => p.quantity > 20).length;
-        const normalStock = productsList.length - lowStock - highStock;
-        
-        setStockStatus({
-          low: lowStock,
-          normal: normalStock,
-          high: highStock
-        });
-        
-        // Calcular valor total estimado (simulação)
-        const total = productsList.reduce((sum, product) => sum + (product.quantity * 100), 0);
-        setTotalValue(total);
-        
-        // Carregar movimentações
-        const historyJson = await AsyncStorage.getItem('productHistory');
-        if (historyJson) {
-          const allHistory: ProductHistory[] = JSON.parse(historyJson);
-          
-          // Extrair todas as movimentações
-          const allMovements: MovementRecord[] = [];
-          allHistory.forEach(history => {
-            history.movements.forEach(movement => {
-              allMovements.push(movement);
+        // Verificar conexão
+        const connected = await verificarConexao();
+        setIsOnline(connected);
+
+        if (connected) {
+          // Tentar carregar dados do servidor
+          try {
+            const dashData = await getDashboardData();
+            setDashboardData(dashData);
+            
+            // Definir estatísticas de estoque
+            setStockStatus({
+              low: dashData.estoque_baixo || 0,
+              normal: dashData.total_produtos - (dashData.estoque_baixo || 0) - 0, // Vamos considerar 0 high stock por enquanto
+              high: 0
             });
-          });
-          
-          // Ordenar por data
-          allMovements.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-          
-          setMovements(allMovements);
+            
+            // Calcular valor total estimado (simulação)
+            const valorTotal = dashData.top_produtos.reduce((sum, p) => sum + (p.quantidade * 100), 0);
+            setTotalValue(valorTotal);
+          } catch (dashError) {
+            console.error("Erro ao carregar dashboard do servidor:", dashError);
+            loadLocalData();
+          }
+        } else {
+          // Modo offline - carregar dados locais
+          loadLocalData();
         }
+        
+        setLastUpdate(new Date());
       } catch (error) {
-        console.error("Erro ao carregar dados para o dashboard:", error);
+        console.error("Erro geral ao carregar dados para o dashboard:", error);
+        Alert.alert("Erro", "Não foi possível carregar os dados do dashboard");
       } finally {
         setLoading(false);
       }
+    };
+    
+    const loadLocalData = async () => {
+      // Carregar produtos
+      const produtosData = await getProdutos();
+      setProdutos(produtosData);
+      
+      // Carregar movimentações
+      const movimentacoesData = await getMovimentacoes();
+      setMovimentos(movimentacoesData);
+      
+      // Calcular estatísticas
+      const lowStock = produtosData.filter(p => p.quantidade < (p.quantidade_minima || 5)).length;
+      const highStock = produtosData.filter(p => p.quantidade > 20).length;
+      const normalStock = produtosData.length - lowStock - highStock;
+      
+      setStockStatus({
+        low: lowStock,
+        normal: normalStock,
+        high: highStock
+      });
+      
+      // Calcular valor total estimado (simulação)
+      const totalValue = produtosData.reduce((sum, product) => sum + (product.quantidade * 100), 0);
+      setTotalValue(totalValue);
     };
     
     loadData();
@@ -169,13 +223,28 @@ const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
 
   // Preparar dados para o gráfico de barras (Top 5 produtos por quantidade)
   const getTopProductsData = () => {
-    const sortedProducts = [...products].sort((a, b) => b.quantity - a.quantity).slice(0, 5);
+    let topProdutos: ProdutoView[] = [];
+    
+    if (dashboardData && dashboardData.top_produtos.length > 0) {
+      // Usar dados do servidor se disponíveis
+      topProdutos = dashboardData.top_produtos.slice(0, 5);
+    } else {
+      // Usar dados locais
+      topProdutos = [...produtos]
+        .sort((a, b) => b.quantidade - a.quantidade)
+        .slice(0, 5)
+        .map(p => ({
+          codigo: p.codigo,
+          nome: p.nome,
+          quantidade: p.quantidade
+        }));
+    }
     
     return {
-      labels: sortedProducts.map(p => p.name.length > 8 ? p.name.substring(0, 8) + '...' : p.name),
+      labels: topProdutos.map(p => p.nome.length > 8 ? p.nome.substring(0, 8) + '...' : p.nome),
       datasets: [
         {
-          data: sortedProducts.map(p => p.quantity)
+          data: topProdutos.map(p => p.quantidade)
         }
       ]
     };
@@ -188,25 +257,52 @@ const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
     const entriesData = [];
     const exitsData = [];
     
+    // Preparar array de datas (últimos 7 dias)
     for (let i = 6; i >= 0; i--) {
       const date = new Date();
       date.setDate(date.getDate() - i);
       const dateString = date.toISOString().split('T')[0];
       dates.push(dateString.substring(5)); // Formato MM-DD
+    }
+    
+    // Lista de movimentações a usar
+    let movs: Movimentacao[] = [];
+    
+    if (dashboardData && dashboardData.ultimas_movimentacoes && dashboardData.ultimas_movimentacoes.length > 0) {
+      // Converter dados do servidor para o formato de Movimentacao
+      movs = dashboardData.ultimas_movimentacoes.map(m => ({
+        ...m,
+        tipo: m.tipo as 'entrada' | 'saida',
+        produto_id: 0, // Valor fictício já que não é usado neste contexto
+      }));
+    } else {
+      // Usar movimentações locais
+      movs = movimentos;
+    }
+    
+    // Calcular valores para cada dia
+    for (const dateStr of dates) {
+      // Formato completo YYYY-MM-DD para comparação
+      const currentYear = new Date().getFullYear();
+      const fullDateStr = `${currentYear}-${dateStr}`;
       
-      // Calcular entradas e saídas para este dia
-      const dayMovements = movements.filter(m => 
-        m.date.startsWith(dateString)
-      );
+      // Filtrar movimentações para este dia
+      const dayMovs = movs.filter(m => {
+        if (!m.data_movimentacao) return false;
+        const movDate = new Date(m.data_movimentacao);
+        const movDateStr = movDate.toISOString().split('T')[0];
+        return movDateStr === fullDateStr;
+      });
       
-      const entries = dayMovements
-        .filter(m => m.type === 'in')
-        .reduce((sum, m) => sum + m.quantity, 0);
-        
-      const exits = dayMovements
-        .filter(m => m.type === 'out')
-        .reduce((sum, m) => sum + m.quantity, 0);
-        
+      // Calcular entradas e saídas
+      const entries = dayMovs
+        .filter(m => m.tipo === 'entrada')
+        .reduce((sum, m) => sum + m.quantidade, 0);
+      
+      const exits = dayMovs
+        .filter(m => m.tipo === 'saida')
+        .reduce((sum, m) => sum + m.quantidade, 0);
+      
       entriesData.push(entries);
       exitsData.push(exits);
     }
@@ -273,7 +369,19 @@ const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
       );
     }
 
-    if (products.length === 0) {
+    // Calcular valores para o resumo
+    let totalProdutosCount = 0;
+    let totalItensCount = 0;
+    
+    if (dashboardData) {
+      totalProdutosCount = dashboardData.total_produtos;
+      totalItensCount = dashboardData.total_itens;
+    } else {
+      totalProdutosCount = produtos.length;
+      totalItensCount = produtos.reduce((sum, p) => sum + p.quantidade, 0);
+    }
+
+    if (totalProdutosCount === 0) {
       return (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>
@@ -291,17 +399,21 @@ const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
 
     return (
       <ScrollView style={styles.container}>
+        {!isOnline && (
+          <View style={styles.offlineBanner}>
+            <Text style={styles.offlineText}>Modo Offline - Exibindo dados locais</Text>
+          </View>
+        )}
+        
         {/* Resumo em Cards */}
         <View style={styles.summaryContainer}>
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryValue}>{products.length}</Text>
+            <Text style={styles.summaryValue}>{totalProdutosCount}</Text>
             <Text style={styles.summaryLabel}>Produtos</Text>
           </View>
           
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryValue}>
-              {products.reduce((sum, product) => sum + product.quantity, 0)}
-            </Text>
+            <Text style={styles.summaryValue}>{totalItensCount}</Text>
             <Text style={styles.summaryLabel}>Unidades</Text>
           </View>
           
@@ -371,7 +483,7 @@ const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
           {selectedChart === 'movimento' ? (
             <>
               <Text style={styles.chartTitle}>Movimentação (7 dias)</Text>
-              {movements.length === 0 ? (
+              {movimentos.length === 0 ? (
                 <Text style={styles.noDataText}>Sem movimentações registradas</Text>
               ) : (
                 <LineChart
@@ -403,12 +515,39 @@ const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
         <View style={styles.movementsContainer}>
           <Text style={styles.chartTitle}>Últimas Movimentações</Text>
           
-          {movements.length === 0 ? (
-            <Text style={styles.noDataText}>Sem movimentações registradas</Text>
-          ) : (
-            movements.slice(0, 5).map((movement, index) => {
-              const isEntry = movement.type === 'in';
-              const date = new Date(movement.date);
+          {(() => {
+            // Determinar quais movimentações mostrar
+            let movsToShow: MovimentacaoView[] = [];
+            
+            if (dashboardData && dashboardData.ultimas_movimentacoes && dashboardData.ultimas_movimentacoes.length > 0) {
+              movsToShow = dashboardData.ultimas_movimentacoes.slice(0, 5);
+            } else if (movimentos.length > 0) {
+              // Ordenar movimentos pelo mais recente
+              movsToShow = [...movimentos]
+                .sort((a, b) => {
+                  const dateA = new Date(a.data_movimentacao || '');
+                  const dateB = new Date(b.data_movimentacao || '');
+                  return dateB.getTime() - dateA.getTime();
+                })
+                .slice(0, 5)
+                .map(m => ({
+                  id: m.id,
+                  tipo: m.tipo,
+                  quantidade: m.quantidade,
+                  data_movimentacao: m.data_movimentacao || new Date().toISOString(),
+                  notas: m.notas,
+                  produto_codigo: m.produto_codigo || 'N/D',
+                  produto_nome: m.produto_nome || 'Produto'
+                }));
+            }
+            
+            if (movsToShow.length === 0) {
+              return <Text style={styles.noDataText}>Sem movimentações registradas</Text>;
+            }
+            
+            return movsToShow.map((movement, index) => {
+              const isEntry = movement.tipo === 'entrada';
+              const date = new Date(movement.data_movimentacao);
               const formattedDate = `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
               
               return (
@@ -424,20 +563,26 @@ const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
                   
                   <View style={styles.movementInfo}>
                     <Text style={styles.movementTitle}>
-                      {isEntry ? 'Entrada' : 'Saída'} de {movement.quantity} unidade(s)
+                      {isEntry ? 'Entrada' : 'Saída'} de {movement.quantidade} unidade(s)
+                    </Text>
+                    <Text style={styles.movementSubtitle}>
+                      {movement.produto_nome}
                     </Text>
                     <Text style={styles.movementDate}>{formattedDate}</Text>
                   </View>
                   
-                  <Text style={styles.movementQuantity}>
-                    {isEntry ? '+' : '-'}{movement.quantity}
+                  <Text style={[
+                    styles.movementQuantity,
+                    { color: isEntry ? COLORS.success : COLORS.error }
+                  ]}>
+                    {isEntry ? '+' : '-'}{movement.quantidade}
                   </Text>
                 </View>
               );
-            })
-          )}
+            });
+          })()}
           
-          {movements.length > 5 && (
+          {((dashboardData?.ultimas_movimentacoes?.length || 0) > 5 || movimentos.length > 5) && (
             <TouchableOpacity
               style={styles.viewMoreButton}
               onPress={() => navigation.navigate('ProductList')}
@@ -445,6 +590,12 @@ const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
               <Text style={styles.viewMoreText}>Ver Todas Movimentações</Text>
             </TouchableOpacity>
           )}
+        </View>
+        
+        <View style={styles.updateInfo}>
+          <Text style={styles.updateInfoText}>
+            Última atualização: {lastUpdate.toLocaleTimeString()}
+          </Text>
         </View>
       </ScrollView>
     );
@@ -613,6 +764,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.black,
   },
+  movementSubtitle: {
+    fontSize: 12,
+    color: COLORS.black,
+    fontWeight: '500',
+  },
   movementDate: {
     fontSize: 12,
     color: COLORS.grey,
@@ -629,6 +785,27 @@ const styles = StyleSheet.create({
   viewMoreText: {
     color: COLORS.primary,
     fontSize: 14,
+  },
+  offlineBanner: {
+    backgroundColor: COLORS.error,
+    padding: 8,
+    borderRadius: 5,
+    marginBottom: 15,
+    alignItems: 'center',
+  },
+  offlineText: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  updateInfo: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  updateInfoText: {
+    fontSize: 12,
+    color: COLORS.grey,
+    fontStyle: 'italic',
   },
 });
 
