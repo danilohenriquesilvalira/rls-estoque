@@ -89,6 +89,33 @@ let portaAtual = DEFAULT_PORT;
 let lastDetectedServer = ''; // Último servidor detectado com sucesso
 let servidorDetectionInProgress = false;
 
+// Função para inicializar com o servidor Tailscale
+const inicializarServidorTailscale = async () => {
+  try {
+    // Verificar se já temos um servidor configurado
+    const serverIp = await AsyncStorage.getItem('@server_ip');
+    
+    // Se não tiver nenhum servidor configurado, usar o Tailscale IP
+    if (!serverIp) {
+      log('Configurando servidor Tailscale por padrão');
+      const tailscaleIp = '100.77.52.45'; // IP do seu PC com Tailscale
+      
+      await AsyncStorage.setItem('@server_ip', tailscaleIp);
+      await AsyncStorage.setItem('@server_port', DEFAULT_PORT);
+      
+      servidorAtual = tailscaleIp;
+      portaAtual = DEFAULT_PORT;
+      
+      log(`Servidor Tailscale configurado: ${tailscaleIp}:${DEFAULT_PORT}`);
+    }
+  } catch (error) {
+    log('Erro ao inicializar servidor Tailscale:', error);
+  }
+};
+
+// Chamar a função de inicialização imediatamente
+inicializarServidorTailscale();
+
 // Status da conexão
 export const getStatusConexao = () => {
   return !modoOffline;
