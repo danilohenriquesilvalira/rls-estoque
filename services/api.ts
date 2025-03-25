@@ -1,10 +1,32 @@
-// services/api.ts - Cliente para conectar com a API backend
+// services/api.ts - Cliente para conectar com a API backend (VERSÃO CORRIGIDA)
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfoMock from '../utils/netInfoMock';
 
-// URL base da API
-const API_URL = 'http://192.168.1.85:8080/api'; // IP do computador na rede local
-const DEBUG = true; // Ativar/desativar logs de depuração
+// Usar o mock em vez da importação real
+const NetInfo = NetInfoMock;
+
+// CONFIGURAÇÃO: Modifique estas variáveis
+// ATENÇÃO: Substitua pelo IP real da sua máquina na rede
+// Use o IP que outros dispositivos usam para acessar seu computador
+const DEFAULT_SERVER_IP = '192.168.1.85'; // ⚠️ ALTERE PARA SEU IP REAL!
+const DEFAULT_PORT = '8080';
+
+// Função para obter a URL da API
+const getApiUrl = async () => {
+  try {
+    // Tentar ler o IP das configurações salvas primeiro
+    const serverIp = await AsyncStorage.getItem('@server_ip') || DEFAULT_SERVER_IP;
+    const serverPort = await AsyncStorage.getItem('@server_port') || DEFAULT_PORT;
+    return `http://${serverIp}:${serverPort}/api`;
+  } catch (error) {
+    console.log('[API] Erro ao obter configuração do servidor:', error);
+    return `http://${DEFAULT_SERVER_IP}:${DEFAULT_PORT}/api`;
+  }
+};
+
+// DEBUG: Ative para mais informações nos logs
+const DEBUG = true;
 
 // Função para log de depuração
 const log = (message: string, data?: any) => {
@@ -76,36 +98,66 @@ export interface ProdutoView {
 }
 
 // Flag para controlar o modo offline
-let modoOffline = false;
+let modoOffline = true; // Inicia como offline até confirmar conexão
+
+// Status da conexão
+export const getStatusConexao = () => {
+  return !modoOffline;
+};
 
 // Verificar status da conexão
 export const verificarConexao = async (): Promise<boolean> => {
   try {
-    log('Verificando conexão com o servidor...');
+    // Verificar se temos conectividade de internet primeiro
+    const netInfoState = await NetInfo.fetch();
+    if (!netInfoState.isConnected) {
+      log('Sem conexão com a internet, modo offline ativado');
+      modoOffline = true;
+      return false;
+    }
+
+    const apiUrl = await getApiUrl();
+    log(`Verificando conexão com o servidor em: ${apiUrl}`);
+    
+    // Adicionar timeout para não travar em casos de servidor indisponível
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     
     // Tentar fazer uma requisição simples
-    const response = await fetch(`${API_URL}/configuracoes/versao_app`, {
+    const response = await fetch(`${apiUrl}/produtos?limit=1`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    
+    // Logar detalhes da resposta para diagnóstico
+    log('Resposta do servidor:', {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok
     });
     
     // Se a requisição foi bem-sucedida, estamos online
     modoOffline = !response.ok;
     
     if (!modoOffline) {
-      log('Conexão estabelecida com o servidor!');
+      log('✅ Conexão estabelecida com o servidor!');
+      await AsyncStorage.setItem('@ultimo_acesso_online', new Date().toISOString());
     } else {
-      log('Falha na conexão com o servidor, resposta não OK');
+      log('❌ Falha na conexão com o servidor, resposta não OK');
     }
     
     return !modoOffline;
   } catch (error) {
     // Se houve erro, estamos offline
-    log('Erro ao verificar conexão:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log('❌ Erro ao verificar conexão:', errorMessage);
     modoOffline = true;
-    log('Modo offline ativado');
+    log('Modo offline ativado devido ao erro de conexão');
     return false;
   }
 };
@@ -127,7 +179,8 @@ export const getProdutos = async (): Promise<Produto[]> => {
     }
     
     // Fazer requisição à API
-    const response = await fetch(`${API_URL}/produtos`);
+    const apiUrl = await getApiUrl();
+    const response = await fetch(`${apiUrl}/produtos`);
     
     if (!response.ok) {
       throw new Error(`Erro ao buscar produtos: ${response.status} ${response.statusText}`);
@@ -142,7 +195,8 @@ export const getProdutos = async (): Promise<Produto[]> => {
     
     return data;
   } catch (error) {
-    log('Erro ao buscar produtos:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log('Erro ao buscar produtos:', errorMessage);
     
     // Tentar usar dados locais
     const produtosJson = await AsyncStorage.getItem('produtos');
@@ -168,7 +222,8 @@ export const getProduto = async (id: number): Promise<Produto | null> => {
     }
     
     // Fazer requisição à API
-    const response = await fetch(`${API_URL}/produtos/${id}`);
+    const apiUrl = await getApiUrl();
+    const response = await fetch(`${apiUrl}/produtos/${id}`);
     
     if (!response.ok) {
       if (response.status === 404) {
@@ -182,7 +237,8 @@ export const getProduto = async (id: number): Promise<Produto | null> => {
     log(`Produto recebido do servidor: ${produto.nome}`);
     return produto;
   } catch (error) {
-    log(`Erro ao buscar produto com ID ${id}:`, error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log(`Erro ao buscar produto com ID ${id}:`, errorMessage);
     
     // Tentar usar dados locais
     const produtosJson = await AsyncStorage.getItem('produtos');
@@ -209,7 +265,8 @@ export const getProdutoPorCodigo = async (codigo: string): Promise<Produto | nul
     }
     
     // Fazer requisição à API
-    const response = await fetch(`${API_URL}/produtos/codigo/${codigo}`);
+    const apiUrl = await getApiUrl();
+    const response = await fetch(`${apiUrl}/produtos/codigo/${codigo}`);
     
     if (!response.ok) {
       if (response.status === 404) {
@@ -223,7 +280,8 @@ export const getProdutoPorCodigo = async (codigo: string): Promise<Produto | nul
     log(`Produto recebido do servidor: ${produto.nome}`);
     return produto;
   } catch (error) {
-    log(`Erro ao buscar produto com código ${codigo}:`, error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log(`Erro ao buscar produto com código ${codigo}:`, errorMessage);
     
     // Tentar usar dados locais
     const produtosJson = await AsyncStorage.getItem('produtos');
@@ -274,7 +332,8 @@ export const criarProduto = async (produto: Produto): Promise<Produto> => {
     
     // Fazer requisição à API
     log('Enviando requisição para criar produto no servidor');
-    const response = await fetch(`${API_URL}/produtos`, {
+    const apiUrl = await getApiUrl();
+    const response = await fetch(`${apiUrl}/produtos`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -299,7 +358,8 @@ export const criarProduto = async (produto: Produto): Promise<Produto> => {
     
     return novoProduto;
   } catch (error) {
-    log('Erro ao criar produto:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log('Erro ao criar produto:', errorMessage);
     throw error;
   }
 };
@@ -349,7 +409,8 @@ export const atualizarProduto = async (id: number, produto: Produto): Promise<Pr
     
     // Fazer requisição à API
     log('Enviando requisição para atualizar produto no servidor');
-    const response = await fetch(`${API_URL}/produtos/${id}`, {
+    const apiUrl = await getApiUrl();
+    const response = await fetch(`${apiUrl}/produtos/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -377,7 +438,8 @@ export const atualizarProduto = async (id: number, produto: Produto): Promise<Pr
     
     return produtoAtualizado;
   } catch (error) {
-    log(`Erro ao atualizar produto ID ${id}:`, error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log(`Erro ao atualizar produto ID ${id}:`, errorMessage);
     throw error;
   }
 };
@@ -418,7 +480,8 @@ export const deletarProduto = async (id: number): Promise<void> => {
     
     // Fazer requisição à API
     log('Enviando requisição para excluir produto no servidor');
-    const response = await fetch(`${API_URL}/produtos/${id}`, {
+    const apiUrl = await getApiUrl();
+    const response = await fetch(`${apiUrl}/produtos/${id}`, {
       method: 'DELETE',
     });
     
@@ -438,7 +501,8 @@ export const deletarProduto = async (id: number): Promise<void> => {
       log('Cache local atualizado após exclusão');
     }
   } catch (error) {
-    log(`Erro ao excluir produto ID ${id}:`, error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log(`Erro ao excluir produto ID ${id}:`, errorMessage);
     throw error;
   }
 };
@@ -460,7 +524,8 @@ export const getMovimentacoes = async (): Promise<Movimentacao[]> => {
     }
     
     // Fazer requisição à API
-    const response = await fetch(`${API_URL}/movimentacoes`);
+    const apiUrl = await getApiUrl();
+    const response = await fetch(`${apiUrl}/movimentacoes`);
     
     if (!response.ok) {
       throw new Error(`Erro ao buscar movimentações: ${response.status} ${response.statusText}`);
@@ -475,7 +540,8 @@ export const getMovimentacoes = async (): Promise<Movimentacao[]> => {
     
     return data;
   } catch (error) {
-    log('Erro ao buscar movimentações:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log('Erro ao buscar movimentações:', errorMessage);
     
     // Tentar usar dados locais
     const movimentacoesJson = await AsyncStorage.getItem('movimentacoes');
@@ -501,7 +567,8 @@ export const getMovimentacoesPorProduto = async (produtoId: number): Promise<Mov
     }
     
     // Fazer requisição à API
-    const response = await fetch(`${API_URL}/movimentacoes/produto/${produtoId}`);
+    const apiUrl = await getApiUrl();
+    const response = await fetch(`${apiUrl}/movimentacoes/produto/${produtoId}`);
     
     if (!response.ok) {
       throw new Error(`Erro ao buscar movimentações: ${response.status} ${response.statusText}`);
@@ -511,7 +578,8 @@ export const getMovimentacoesPorProduto = async (produtoId: number): Promise<Mov
     log(`Movimentações recebidas do servidor (${movimentacoes.length})`);
     return movimentacoes;
   } catch (error) {
-    log(`Erro ao buscar movimentações do produto ID ${produtoId}:`, error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log(`Erro ao buscar movimentações do produto ID ${produtoId}:`, errorMessage);
     
     // Tentar usar dados locais
     const movimentacoesJson = await AsyncStorage.getItem('movimentacoes');
@@ -586,7 +654,8 @@ export const criarMovimentacao = async (movimentacao: Movimentacao): Promise<Mov
     
     // Fazer requisição à API
     log('Enviando requisição para criar movimentação no servidor');
-    const response = await fetch(`${API_URL}/movimentacoes`, {
+    const apiUrl = await getApiUrl();
+    const response = await fetch(`${apiUrl}/movimentacoes`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -635,7 +704,8 @@ export const criarMovimentacao = async (movimentacao: Movimentacao): Promise<Mov
     
     return novaMovimentacao;
   } catch (error) {
-    log('Erro ao criar movimentação:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log('Erro ao criar movimentação:', errorMessage);
     throw error;
   }
 };
@@ -657,7 +727,8 @@ export const getConfiguracoes = async (): Promise<Configuracao[]> => {
     }
     
     // Fazer requisição à API
-    const response = await fetch(`${API_URL}/configuracoes`);
+    const apiUrl = await getApiUrl();
+    const response = await fetch(`${apiUrl}/configuracoes`);
     
     if (!response.ok) {
       throw new Error(`Erro ao buscar configurações: ${response.status} ${response.statusText}`);
@@ -672,7 +743,8 @@ export const getConfiguracoes = async (): Promise<Configuracao[]> => {
     
     return data;
   } catch (error) {
-    log('Erro ao buscar configurações:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log('Erro ao buscar configurações:', errorMessage);
     
     // Tentar usar dados locais
     const configuracoesJson = await AsyncStorage.getItem('configuracoes');
@@ -698,7 +770,8 @@ export const getConfiguracao = async (chave: string): Promise<Configuracao | nul
     }
     
     // Fazer requisição à API
-    const response = await fetch(`${API_URL}/configuracoes/${chave}`);
+    const apiUrl = await getApiUrl();
+    const response = await fetch(`${apiUrl}/configuracoes/${chave}`);
     
     if (!response.ok) {
       if (response.status === 404) {
@@ -712,7 +785,8 @@ export const getConfiguracao = async (chave: string): Promise<Configuracao | nul
     log(`Configuração recebida do servidor: ${configuracao.chave}=${configuracao.valor}`);
     return configuracao;
   } catch (error) {
-    log(`Erro ao buscar configuração com chave ${chave}:`, error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log(`Erro ao buscar configuração com chave ${chave}:`, errorMessage);
     
     // Tentar usar dados locais
     const configuracoesJson = await AsyncStorage.getItem('configuracoes');
@@ -775,7 +849,8 @@ export const atualizarConfiguracao = async (chave: string, valor: string): Promi
     
     // Fazer requisição à API
     log('Enviando requisição para atualizar configuração no servidor');
-    const response = await fetch(`${API_URL}/configuracoes/${chave}`, {
+    const apiUrl = await getApiUrl();
+    const response = await fetch(`${apiUrl}/configuracoes/${chave}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -807,7 +882,8 @@ export const atualizarConfiguracao = async (chave: string, valor: string): Promi
     
     return configuracaoAtualizada;
   } catch (error) {
-    log(`Erro ao atualizar configuração ${chave}:`, error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log(`Erro ao atualizar configuração ${chave}:`, errorMessage);
     throw error;
   }
 };
@@ -872,7 +948,8 @@ export const getDashboardData = async (): Promise<DashboardData> => {
     }
     
     // Fazer requisição à API
-    const response = await fetch(`${API_URL}/dashboard`);
+    const apiUrl = await getApiUrl();
+    const response = await fetch(`${apiUrl}/dashboard`);
     
     if (!response.ok) {
       throw new Error(`Erro ao buscar dados do dashboard: ${response.status} ${response.statusText}`);
@@ -882,7 +959,8 @@ export const getDashboardData = async (): Promise<DashboardData> => {
     log('Dados do dashboard recebidos com sucesso do servidor');
     return dashboardData;
   } catch (error) {
-    log('Erro ao buscar dados do dashboard:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log('Erro ao buscar dados do dashboard:', errorMessage);
     
     // Criar dashboard básico com dados locais
     log('Gerando dashboard básico com dados locais após erro');
@@ -899,8 +977,13 @@ export const getDashboardData = async (): Promise<DashboardData> => {
   }
 };
 
-// Função para sincronizar dados offline
-export const sincronizarDados = async (): Promise<void> => {
+// Função MELHORADA para sincronizar dados offline
+export const sincronizarDados = async (): Promise<{
+  sucesso: boolean;
+  sincronizados: number;
+  pendentes: number;
+  mensagem: string;
+}> => {
   try {
     log('Iniciando sincronização de dados offline...');
     
@@ -908,7 +991,12 @@ export const sincronizarDados = async (): Promise<void> => {
     const online = await verificarConexao();
     if (!online) {
       log('Sem conexão com o servidor. Sincronização cancelada.');
-      throw new Error('Sem conexão com o servidor');
+      return {
+        sucesso: false,
+        sincronizados: 0,
+        pendentes: 0,
+        mensagem: 'Sem conexão com o servidor'
+      };
     }
     
     // Obter fila de sincronização
@@ -917,7 +1005,12 @@ export const sincronizarDados = async (): Promise<void> => {
     
     if (syncQueue.length === 0) {
       log('Nada para sincronizar');
-      return; // Nada para sincronizar
+      return {
+        sucesso: true,
+        sincronizados: 0,
+        pendentes: 0,
+        mensagem: 'Nada para sincronizar'
+      };
     }
     
     log(`Processando fila de sincronização: ${syncQueue.length} operações pendentes`);
@@ -925,6 +1018,7 @@ export const sincronizarDados = async (): Promise<void> => {
     // Processar cada item da fila
     const novaFila = [];
     let sincronizados = 0;
+    const apiUrl = await getApiUrl();
     
     for (const item of syncQueue) {
       try {
@@ -933,49 +1027,96 @@ export const sincronizarDados = async (): Promise<void> => {
         switch (item.tipo) {
           case 'criar_produto':
             log('Enviando produto para criação no servidor');
-            await fetch(`${API_URL}/produtos`, {
+            const produtoResponse = await fetch(`${apiUrl}/produtos`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(item.dados),
             });
+            
+            if (!produtoResponse.ok) {
+              const errorData = await produtoResponse.json();
+              log(`Erro ao criar produto no servidor: ${errorData.error || produtoResponse.statusText}`);
+              throw new Error(`Erro ao criar produto: ${errorData.error || produtoResponse.statusText}`);
+            }
+            
+            log('✅ Produto criado com sucesso no servidor');
             sincronizados++;
             break;
             
           case 'atualizar_produto':
             log(`Enviando atualização de produto ID: ${item.id}`);
-            await fetch(`${API_URL}/produtos/${item.id}`, {
+            const atualizarResponse = await fetch(`${apiUrl}/produtos/${item.id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(item.dados),
             });
+            
+            if (!atualizarResponse.ok) {
+              const errorData = await atualizarResponse.json();
+              log(`Erro ao atualizar produto no servidor: ${errorData.error || atualizarResponse.statusText}`);
+              throw new Error(`Erro ao atualizar produto: ${errorData.error || atualizarResponse.statusText}`);
+            }
+            
+            log('✅ Produto atualizado com sucesso no servidor');
             sincronizados++;
             break;
             
           case 'deletar_produto':
             log(`Enviando exclusão de produto ID: ${item.id}`);
-            await fetch(`${API_URL}/produtos/${item.id}`, {
+            const deletarResponse = await fetch(`${apiUrl}/produtos/${item.id}`, {
               method: 'DELETE',
             });
+            
+            if (!deletarResponse.ok) {
+              // Se o produto já não existe, consideramos como sucesso
+              if (deletarResponse.status === 404) {
+                log('Produto já não existe no servidor, considerando exclusão bem-sucedida');
+                sincronizados++;
+                break;
+              }
+              
+              const errorData = await deletarResponse.json();
+              log(`Erro ao excluir produto no servidor: ${errorData.error || deletarResponse.statusText}`);
+              throw new Error(`Erro ao excluir produto: ${errorData.error || deletarResponse.statusText}`);
+            }
+            
+            log('✅ Produto excluído com sucesso no servidor');
             sincronizados++;
             break;
             
           case 'criar_movimentacao':
             log('Enviando movimentação para criação no servidor');
-            await fetch(`${API_URL}/movimentacoes`, {
+            const movimentacaoResponse = await fetch(`${apiUrl}/movimentacoes`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(item.dados),
             });
+            
+            if (!movimentacaoResponse.ok) {
+              const errorData = await movimentacaoResponse.json();
+              log(`Erro ao criar movimentação no servidor: ${errorData.error || movimentacaoResponse.statusText}`);
+              throw new Error(`Erro ao criar movimentação: ${errorData.error || movimentacaoResponse.statusText}`);
+            }
+            
+            log('✅ Movimentação criada com sucesso no servidor');
             sincronizados++;
             break;
             
           case 'atualizar_configuracao':
             log(`Enviando atualização de configuração: ${item.chave}`);
-            await fetch(`${API_URL}/configuracoes/${item.chave}`, {
+            const configResponse = await fetch(`${apiUrl}/configuracoes/${item.chave}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ valor: item.valor }),
             });
+            
+            if (!configResponse.ok) {
+              const errorData = await configResponse.json();
+              log(`Erro ao atualizar configuração no servidor: ${errorData.error || configResponse.statusText}`);
+              throw new Error(`Erro ao atualizar configuração: ${errorData.error || configResponse.statusText}`);
+            }
+            
+            log('✅ Configuração atualizada com sucesso no servidor');
             sincronizados++;
             break;
             
@@ -985,8 +1126,39 @@ export const sincronizarDados = async (): Promise<void> => {
             novaFila.push(item);
         }
       } catch (error) {
-        log(`Erro ao sincronizar item ${item.tipo}:`, error);
-        novaFila.push(item); // Manter na fila para tentar novamente
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        log(`❌ Erro ao sincronizar item ${item.tipo}:`, errorMessage);
+        // Se o erro é de conexão, interromper a sincronização
+        if (errorMessage.includes('Failed to fetch') || 
+            errorMessage.includes('Network request failed')) {
+          log('Erro de conexão detectado, interrompendo sincronização');
+          // Adicionar todos os itens restantes (incluindo o atual) à nova fila
+          novaFila.push(item);
+          const restIndex = syncQueue.indexOf(item) + 1;
+          syncQueue.slice(restIndex).forEach((i: any) => novaFila.push(i));
+          break;
+        }
+        
+        // Verificar se deve tentar novamente ou descartar
+        const agora = new Date();
+        const dataItem = new Date(item.data);
+        const diasDiferenca = Math.floor((agora.getTime() - dataItem.getTime()) / (1000 * 60 * 60 * 24));
+        
+        // Descartar itens com mais de 15 dias
+        if (diasDiferenca > 15) {
+          log(`Item com mais de 15 dias, descartando: ${item.tipo}`);
+        } else {
+          // Adicionar contagem de tentativas
+          const tentativas = (item.tentativas || 0) + 1;
+          const itemComTentativas = {...item, tentativas};
+          
+          // Se menos de 5 tentativas, manter na fila
+          if (tentativas < 5) {
+            novaFila.push(itemComTentativas);
+          } else {
+            log(`Item excedeu 5 tentativas, descartando: ${item.tipo}`);
+          }
+        }
       }
     }
     
@@ -994,23 +1166,74 @@ export const sincronizarDados = async (): Promise<void> => {
     await AsyncStorage.setItem('sync_queue', JSON.stringify(novaFila));
     log(`Sincronização concluída: ${sincronizados} operações realizadas, ${novaFila.length} pendentes`);
     
-    // Atualizar dados locais
-    log('Atualizando dados locais após sincronização');
-    await Promise.all([
-      getProdutos(),
-      getMovimentacoes(),
-      getConfiguracoes(),
-    ]);
+    // Atualizar dados locais após sincronização bem-sucedida
+    if (sincronizados > 0) {
+      log('Atualizando dados locais após sincronização');
+      try {
+        await Promise.all([
+          getProdutos(),
+          getMovimentacoes(),
+          getConfiguracoes(),
+        ]);
+        log('Dados locais atualizados com sucesso');
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        log('Erro ao atualizar dados locais após sincronização:', errorMessage);
+      }
+    }
     
-    log('Dados locais atualizados com sucesso');
+    return {
+      sucesso: true,
+      sincronizados,
+      pendentes: novaFila.length,
+      mensagem: `${sincronizados} operações sincronizadas, ${novaFila.length} pendentes`
+    };
   } catch (error) {
-    log('Erro ao sincronizar dados:', error);
-    throw error;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log('Erro ao sincronizar dados:', errorMessage);
+    return {
+      sucesso: false,
+      sincronizados: 0,
+      pendentes: -1,
+      mensagem: `Erro na sincronização: ${errorMessage}`
+    };
+  }
+};
+
+// Função para definir o servidor
+export const definirServidor = async (ip: string, porta: string = '8080'): Promise<boolean> => {
+  try {
+    log(`Definindo novo servidor: ${ip}:${porta}`);
+    await AsyncStorage.setItem('@server_ip', ip);
+    await AsyncStorage.setItem('@server_port', porta);
+    
+    // Testar a conexão com o novo servidor
+    const resultado = await verificarConexao();
+    
+    return resultado;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log('Erro ao definir servidor:', errorMessage);
+    return false;
+  }
+};
+
+// Obter endereço do servidor atual
+export const obterEnderecoServidor = async (): Promise<{ip: string, porta: string}> => {
+  try {
+    const ip = await AsyncStorage.getItem('@server_ip') || DEFAULT_SERVER_IP;
+    const porta = await AsyncStorage.getItem('@server_port') || DEFAULT_PORT;
+    return { ip, porta };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log('Erro ao obter endereço do servidor:', errorMessage);
+    return { ip: DEFAULT_SERVER_IP, porta: DEFAULT_PORT };
   }
 };
 
 export default {
   verificarConexao,
+  getStatusConexao,
   getProdutos,
   getProduto,
   getProdutoPorCodigo,
@@ -1025,4 +1248,6 @@ export default {
   atualizarConfiguracao,
   getDashboardData,
   sincronizarDados,
+  definirServidor,
+  obterEnderecoServidor
 };

@@ -8,11 +8,14 @@ import {
   ScrollView,
   ActivityIndicator,
   Dimensions,
-  StatusBar
+  StatusBar,
+  Alert
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Header from '../components/Header';
+import ConnectionStatus from '../components/ConnectionStatus';
+import { verificarConexao, sincronizarDados } from '../services/api';
 import { RootStackParamList } from '../App';
 
 // Definição do tipo para as propriedades de navegação
@@ -53,35 +56,78 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const [loading, setLoading] = useState<boolean>(true);
   const [totalItems, setTotalItems] = useState<number>(0);
   const [lastUpdate, setLastUpdate] = useState<string>('');
+  const [shouldShowServerConfig, setShouldShowServerConfig] = useState<boolean>(false);
+
+  // Verificar se é o primeiro uso
+  useEffect(() => {
+    const checkFirstRun = async () => {
+      try {
+        const firstRun = await AsyncStorage.getItem('@first_run');
+        if (firstRun === null) {
+          // É a primeira execução
+          setShouldShowServerConfig(true);
+          await AsyncStorage.setItem('@first_run', 'false');
+        }
+      } catch (error) {
+        console.error("Erro ao verificar primeira execução:", error);
+      }
+    };
+    
+    checkFirstRun();
+  }, []);
+
+  // Mostrar configuração de servidor se for a primeira vez
+  useEffect(() => {
+    if (shouldShowServerConfig) {
+      Alert.alert(
+        "Configuração Necessária",
+        "Parece que é a primeira vez que você usa o aplicativo. É necessário configurar o endereço do servidor para sincronizar os dados com o banco de dados PostgreSQL.",
+        [
+          {
+            text: "Mais tarde",
+            style: "cancel"
+          },
+          {
+            text: "Configurar Agora",
+            onPress: () => navigation.navigate('ServerConfig')
+          }
+        ]
+      );
+      setShouldShowServerConfig(false);
+    }
+  }, [shouldShowServerConfig, navigation]);
 
   // Carregar dados resumidos do estoque
   useEffect(() => {
     const loadInventorySummary = async () => {
       try {
         setLoading(true);
-        const jsonValue = await AsyncStorage.getItem('products');
+        
+        // Tentar conectar ao servidor primeiro
+        await verificarConexao();
+        
+        const jsonValue = await AsyncStorage.getItem('produtos');
         
         if (jsonValue != null) {
           const products: Product[] = JSON.parse(jsonValue);
           setTotalProducts(products.length);
           
           // Contar produtos com estoque baixo (menos de 5 unidades)
-          const lowStock = products.filter(p => p.quantity < 5).length;
+          const lowStock = products.filter(p => p.quantidade < 5).length;
           setLowStockCount(lowStock);
 
           // Contar total de itens em estoque
-          const total = products.reduce((sum, product) => sum + product.quantity, 0);
+          const total = products.reduce((sum, product) => sum + product.quantidade, 0);
           setTotalItems(total);
-
-          // Registrar horário da atualização
-          setLastUpdate(new Date().toLocaleTimeString());
         } else {
           // Nenhum produto encontrado
           setTotalProducts(0);
           setLowStockCount(0);
           setTotalItems(0);
-          setLastUpdate(new Date().toLocaleTimeString());
         }
+        
+        // Registrar horário da atualização
+        setLastUpdate(new Date().toLocaleTimeString());
       } catch (error) {
         console.error("Erro ao carregar resumo do estoque:", error);
       } finally {
@@ -91,7 +137,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
     // Executar ao montar o componente
     loadInventorySummary();
-
+    
     // Configurar um ouvinte de foco para atualizar quando a tela receber foco
     const unsubscribe = navigation.addListener('focus', () => {
       loadInventorySummary();
@@ -107,6 +153,11 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
       
       {/* Header com Logo */}
       <Header showLogo={true} />
+      
+      {/* Status de Conexão */}
+      <ConnectionStatus 
+        onConfigPress={() => navigation.navigate('ServerConfig')}
+      />
       
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         {/* Banner de boas-vindas */}
@@ -209,6 +260,39 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             <View style={styles.actionTextContainer}>
               <Text style={styles.actionTitle}>Registrar Nova Entrada</Text>
               <Text style={styles.actionDescription}>Adicione novos produtos ao estoque</Text>
+            </View>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={async () => {
+              try {
+                const result = await sincronizarDados();
+                if (result.sucesso) {
+                  Alert.alert("Sincronização", result.mensagem);
+                  // Recarregar dados após sincronização bem-sucedida
+                  const jsonValue = await AsyncStorage.getItem('produtos');
+                  if (jsonValue != null) {
+                    const products = JSON.parse(jsonValue);
+                    setTotalProducts(products.length);
+                    setLowStockCount(products.filter(p => p.quantidade < 5).length);
+                    setTotalItems(products.reduce((sum, p) => sum + p.quantidade, 0));
+                    setLastUpdate(new Date().toLocaleTimeString());
+                  }
+                } else {
+                  Alert.alert("Erro na sincronização", result.mensagem);
+                }
+              } catch (error) {
+                Alert.alert("Erro", `Falha ao sincronizar: ${error.message}`);
+              }
+            }}
+          >
+            <View style={styles.actionIconContainer}>
+              <Text style={styles.actionIcon}>🔄</Text>
+            </View>
+            <View style={styles.actionTextContainer}>
+              <Text style={styles.actionTitle}>Sincronizar com Servidor</Text>
+              <Text style={styles.actionDescription}>Atualize dados com o banco PostgreSQL</Text>
             </View>
           </TouchableOpacity>
           

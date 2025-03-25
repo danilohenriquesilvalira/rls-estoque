@@ -362,7 +362,23 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           </TouchableOpacity>
         </View>
       </ScrollView>
-      
+      <TouchableOpacity
+  style={styles.actionButton}
+  onPress={() => navigation.navigate('ServerConfig')}
+>
+  <Text style={[styles.actionButtonText, { color: COLORS.primary }]}>
+    Configurar Servidor PostgreSQL
+  </Text>
+</TouchableOpacity>
+
+<TouchableOpacity
+  style={styles.actionButton}
+  onPress={() => navigation.navigate('Diagnostic')}
+>
+  <Text style={[styles.actionButtonText, { color: COLORS.primary }]}>
+    Diagnóstico de Conexão
+  </Text>
+</TouchableOpacity>
       {renderAboutModal()}
     </SafeAreaView>
   );
