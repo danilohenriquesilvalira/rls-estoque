@@ -1,3 +1,4 @@
+// App.tsx
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -13,7 +14,11 @@ import DashboardScreen from './screens/DashboardScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import ServerConfigScreen from './screens/ServerConfigScreen';
 import DiagnosticScreen from './screens/DiagnosticScreen';
-import HistoryScreen from './screens/HistoryScreen'; // Nova tela de histórico
+import HistoryScreen from './screens/HistoryScreen';
+
+// Novas telas inteligentes
+import SmartDashboardScreen from './screens/SmartDashboardScreen';
+import ShoppingListScreen from './screens/ShoppingListScreen';
 
 // Definição dos tipos para navegação
 export type RootStackParamList = {
@@ -26,7 +31,11 @@ export type RootStackParamList = {
   Settings: undefined;
   ServerConfig: undefined;
   Diagnostic: undefined;
-  History: undefined; // Nova rota para histórico
+  History: undefined;
+  
+  // Novas rotas
+  SmartDashboard: undefined;
+  ShoppingList: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -52,6 +61,22 @@ export default function App() {
           <Stack.Screen name="ServerConfig" component={ServerConfigScreen} />
           <Stack.Screen name="Diagnostic" component={DiagnosticScreen} />
           <Stack.Screen name="History" component={HistoryScreen} />
+          
+          {/* Novas telas inteligentes */}
+          <Stack.Screen 
+            name="SmartDashboard" 
+            component={SmartDashboardScreen}
+            options={{
+              animation: 'slide_from_bottom'
+            }}
+          />
+          <Stack.Screen 
+            name="ShoppingList" 
+            component={ShoppingListScreen}
+            options={{
+              animation: 'fade_from_bottom'
+            }}
+          />
         </Stack.Navigator>
       </NavigationContainer>
     </ThemeProvider>

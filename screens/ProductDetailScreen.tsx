@@ -1,3 +1,4 @@
+// screens/ProductDetailScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   StyleSheet, 
@@ -20,6 +21,8 @@ import { RouteProp } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getProduto, atualizarProduto, deletarProduto, criarMovimentacao, getMovimentacoesPorProduto } from '../services/api';
 import Header from '../components/Header';
+import { useTheme } from '../contexts/ThemeContext';
+import ProductAIAnalysis from '../components/ProductAIAnalysis';
 
 // Types for navigation and route
 type ProductDetailScreenProps = {
@@ -54,28 +57,10 @@ interface Movimentacao {
   produto_nome?: string;
 }
 
-// Define theme colors
-const COLORS = {
-  primary: '#1565C0',
-  primaryDark: '#0D47A1',
-  primaryLight: '#42A5F5',
-  accent: '#FF6F00',
-  success: '#2E7D32',
-  warning: '#F57F17',
-  error: '#C62828',
-  info: '#0288D1',
-  white: '#FFFFFF',
-  black: '#212121',
-  grey: '#757575',
-  lightGrey: '#EEEEEE',
-  ultraLightGrey: '#F5F5F5',
-  background: '#F7F9FD',
-};
-
-// Get screen dimensions
-const { width: screenWidth } = Dimensions.get('window');
-
 export default function ProductDetailScreen({ route, navigation }: ProductDetailScreenProps) {
+  const { theme } = useTheme();
+  const { COLORS } = theme;
+
   // Normalize received product to ensure compatibility
   // This fixes issues when product comes from scanner (with different fields)
   const rawProduct = route.params.product;
@@ -105,6 +90,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
   const [movements, setMovements] = useState<Movimentacao[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [showAIAnalysis, setShowAIAnalysis] = useState(false);
   
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -112,6 +98,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
   const slideAnim = useRef(new Animated.Value(30)).current;
   const quantityScale = useRef(new Animated.Value(1)).current;
   const modalAnim = useRef(new Animated.Value(0)).current;
+  const aiButtonAnim = useRef(new Animated.Value(0)).current;
 
   // Load updated product details and history
   useEffect(() => {
@@ -134,6 +121,12 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
         duration: 500,
         useNativeDriver: true,
         easing: Easing.out(Easing.ease)
+      }),
+      Animated.timing(aiButtonAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.back(1.5))
       })
     ]).start();
     
@@ -390,10 +383,15 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
     });
   };
 
+  // Toggle AI analysis display
+  const toggleAIAnalysis = () => {
+    setShowAIAnalysis(!showAIAnalysis);
+  };
+
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={styles.container}
+      style={[styles.container, { backgroundColor: COLORS.background }]}
       keyboardVerticalOffset={100}
     >
       <LinearGradient
@@ -420,25 +418,26 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
             opacity: fadeAnim,
             transform: [
               { scale: scaleAnim }
-            ]
+            ],
+            backgroundColor: COLORS.card
           }
         ]}>
           <View style={styles.headerRow}>
             <View style={styles.codeContainer}>
-              <Text style={styles.codeLabel}>Código</Text>
-              <Text style={styles.codeValue}>{produto.codigo}</Text>
+              <Text style={[styles.codeLabel, { color: COLORS.grey }]}>Código</Text>
+              <Text style={[styles.codeValue, { color: COLORS.primary }]}>{produto.codigo}</Text>
             </View>
             
             {!isEditing ? (
               <TouchableOpacity 
-                style={styles.editButton}
+                style={[styles.editButton, { backgroundColor: COLORS.primaryLight }]}
                 onPress={() => setIsEditing(true)}
               >
                 <Text style={styles.editButtonText}>Editar</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity 
-                style={styles.cancelButton}
+                style={[styles.cancelButton, { backgroundColor: COLORS.grey }]}
                 onPress={() => {
                   setIsEditing(false);
                   setEditedName(produto.nome);
@@ -453,17 +452,32 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
           {isEditing ? (
             // Edit mode
             <View style={styles.editContainer}>
-              <Text style={styles.label}>Nome do Produto:</Text>
+              <Text style={[styles.label, { color: COLORS.grey }]}>Nome do Produto:</Text>
               <TextInput
-                style={styles.input}
+                style={[
+                  styles.input, 
+                  { 
+                    backgroundColor: COLORS.ultraLightGrey,
+                    borderColor: COLORS.lightGrey,
+                    color: COLORS.text
+                  }
+                ]}
                 value={editedName}
                 onChangeText={setEditedName}
                 placeholder="Nome do produto"
               />
               
-              <Text style={styles.label}>Descrição:</Text>
+              <Text style={[styles.label, { color: COLORS.grey }]}>Descrição:</Text>
               <TextInput
-                style={[styles.input, styles.textArea]}
+                style={[
+                  styles.input, 
+                  styles.textArea,
+                  { 
+                    backgroundColor: COLORS.ultraLightGrey,
+                    borderColor: COLORS.lightGrey,
+                    color: COLORS.text
+                  }
+                ]}
                 value={editedDescription}
                 onChangeText={setEditedDescription}
                 placeholder="Descrição do produto"
@@ -472,7 +486,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
               />
               
               <TouchableOpacity 
-                style={styles.saveButton}
+                style={[styles.saveButton, { backgroundColor: COLORS.success }]}
                 onPress={saveChanges}
                 disabled={saving}
               >
@@ -486,21 +500,21 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
           ) : (
             // View mode
             <View>
-              <Text style={styles.label}>Nome:</Text>
-              <Text style={styles.value}>{produto.nome}</Text>
+              <Text style={[styles.label, { color: COLORS.grey }]}>Nome:</Text>
+              <Text style={[styles.value, { color: COLORS.text }]}>{produto.nome}</Text>
               
-              <Text style={styles.label}>Descrição:</Text>
-              <Text style={styles.value}>
+              <Text style={[styles.label, { color: COLORS.grey }]}>Descrição:</Text>
+              <Text style={[styles.value, { color: COLORS.text }]}>
                 {produto.descricao || "Nenhuma descrição disponível"}
               </Text>
             </View>
           )}
           
-          <View style={styles.stockSection}>
-            <Text style={styles.stockTitle}>Quantidade em Estoque:</Text>
+          <View style={[styles.stockSection, { backgroundColor: COLORS.ultraLightGrey }]}>
+            <Text style={[styles.stockTitle, { color: COLORS.text }]}>Quantidade em Estoque:</Text>
             <View style={styles.quantityControl}>
               <TouchableOpacity 
-                style={[styles.quantityButton, quantity <= 0 && styles.disabledButton]}
+                style={[styles.quantityButton, quantity <= 0 && styles.disabledButton, { backgroundColor: COLORS.error }]}
                 onPress={() => {
                   if (quantity > 0) {
                     Animated.sequence([
@@ -528,11 +542,11 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
               <Animated.View style={{
                 transform: [{ scale: quantityScale }]
               }}>
-                <Text style={styles.quantityValue}>{quantity}</Text>
+                <Text style={[styles.quantityValue, { color: COLORS.text }]}>{quantity}</Text>
               </Animated.View>
               
               <TouchableOpacity 
-                style={styles.quantityButton}
+                style={[styles.quantityButton, { backgroundColor: COLORS.success }]}
                 onPress={() => {
                   Animated.sequence([
                     Animated.timing(quantityScale, {
@@ -558,7 +572,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
           
           <View style={styles.buttonsContainer}>
             <TouchableOpacity 
-              style={[styles.actionButton, styles.entryButton]}
+              style={[styles.actionButton, styles.entryButton, { backgroundColor: COLORS.success }]}
               onPress={() => openMovementModal('entrada')}
             >
               <Text style={styles.actionButtonText}>Registrar Entrada</Text>
@@ -568,7 +582,8 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
               style={[
                 styles.actionButton, 
                 styles.exitButton,
-                quantity <= 0 && styles.disabledButton
+                quantity <= 0 && styles.disabledButton,
+                { backgroundColor: quantity > 0 ? COLORS.error : COLORS.lightGrey }
               ]}
               onPress={() => openMovementModal('saida')}
               disabled={quantity <= 0}
@@ -578,6 +593,43 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
           </View>
         </Animated.View>
         
+        {/* Botão de Análise IA */}
+        <Animated.View style={{
+          opacity: aiButtonAnim,
+          transform: [
+            { scale: aiButtonAnim },
+            { translateY: aiButtonAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [20, 0]
+            })}
+          ]
+        }}>
+          <TouchableOpacity
+            style={[
+              styles.aiButton,
+              { backgroundColor: showAIAnalysis ? COLORS.primary : '#5E35B1' }
+            ]}
+            onPress={toggleAIAnalysis}
+          >
+            <Text style={styles.aiButtonIcon}>🧠</Text>
+            <Text style={styles.aiButtonText}>
+              {showAIAnalysis ? 'Ocultar Análise IA' : 'Mostrar Análise IA'}
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
+        
+        {/* Componente de Análise IA - Mostrado apenas quando ativado */}
+        {showAIAnalysis && produto.id && (
+          <ProductAIAnalysis 
+            produtoId={produto.id} 
+            onProdutoPress={(produtoId) => {
+              // Navegar para o produto similar
+              const produtoSimilar = { id: produtoId };
+              navigation.push('ProductDetail', { product: produtoSimilar });
+            }}
+          />
+        )}
+        
         {/* History section */}
         <Animated.View style={[
           styles.historyCard,
@@ -585,31 +637,33 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
             opacity: fadeAnim,
             transform: [
               { translateY: slideAnim }
-            ]
+            ],
+            backgroundColor: COLORS.card
           }
         ]}>
-          <Text style={styles.historyTitle}>Histórico de Movimentações</Text>
+          <Text style={[styles.historyTitle, { color: COLORS.text }]}>Histórico de Movimentações</Text>
           
           {loadingHistory ? (
             <ActivityIndicator size="small" color={COLORS.primary} style={styles.historyLoader} />
           ) : movements.length === 0 ? (
-            <Text style={styles.emptyHistoryText}>
+            <Text style={[styles.emptyHistoryText, { color: COLORS.grey }]}>
               Nenhuma movimentação registrada
             </Text>
           ) : (
             movements.map((movement, index) => (
               <View key={index} style={[
                 styles.movementItem,
-                movement.tipo === 'entrada' ? styles.entryItemBorder : styles.exitItemBorder
+                movement.tipo === 'entrada' ? styles.entryItemBorder : styles.exitItemBorder,
+                { backgroundColor: COLORS.ultraLightGrey }
               ]}>
                 <View style={styles.movementHeader}>
                   <Text style={[
                     styles.movementType,
-                    movement.tipo === 'entrada' ? styles.entryText : styles.exitText
+                    movement.tipo === 'entrada' ? { color: COLORS.success } : { color: COLORS.error }
                   ]}>
                     {movement.tipo === 'entrada' ? 'ENTRADA' : 'SAÍDA'}
                   </Text>
-                  <Text style={styles.movementDate}>
+                  <Text style={[styles.movementDate, { color: COLORS.grey }]}>
                     {formatDateTime(movement.data_movimentacao || new Date().toISOString())}
                   </Text>
                 </View>
@@ -617,12 +671,12 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
                 <View style={styles.movementDetails}>
                   <Text style={[
                     styles.movementQuantity,
-                    movement.tipo === 'entrada' ? styles.entryText : styles.exitText
+                    movement.tipo === 'entrada' ? { color: COLORS.success } : { color: COLORS.error }
                   ]}>
                     {movement.tipo === 'entrada' ? '+' : '-'}{movement.quantidade} unidades
                   </Text>
                   {movement.notas && (
-                    <Text style={styles.movementNotes}>
+                    <Text style={[styles.movementNotes, { color: COLORS.grey }]}>
                       Obs: {movement.notas}
                     </Text>
                   )}
@@ -639,7 +693,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
           ]
         }}>
           <TouchableOpacity 
-            style={styles.deleteButton}
+            style={[styles.deleteButton, { backgroundColor: COLORS.error }]}
             onPress={deleteProduct}
             disabled={deleting}
           >
@@ -674,7 +728,8 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
                     inputRange: [0, 1],
                     outputRange: [100, 0]
                   }) }
-                ]
+                ],
+                backgroundColor: COLORS.card
               }
             ]}
           >
@@ -693,18 +748,33 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
             </LinearGradient>
             
             <View style={styles.modalBody}>
-              <Text style={styles.modalLabel}>Quantidade:</Text>
+              <Text style={[styles.modalLabel, { color: COLORS.text }]}>Quantidade:</Text>
               <TextInput
-                style={styles.modalInput}
+                style={[
+                  styles.modalInput,
+                  { 
+                    backgroundColor: COLORS.ultraLightGrey,
+                    borderColor: COLORS.lightGrey,
+                    color: COLORS.text
+                  }
+                ]}
                 value={movementQuantity}
                 onChangeText={setMovementQuantity}
                 keyboardType="numeric"
                 placeholder="Quantidade"
               />
               
-              <Text style={styles.modalLabel}>Observações (opcional):</Text>
+              <Text style={[styles.modalLabel, { color: COLORS.text }]}>Observações (opcional):</Text>
               <TextInput
-                style={[styles.modalInput, styles.modalTextArea]}
+                style={[
+                  styles.modalInput, 
+                  styles.modalTextArea,
+                  { 
+                    backgroundColor: COLORS.ultraLightGrey,
+                    borderColor: COLORS.lightGrey,
+                    color: COLORS.text
+                  }
+                ]}
                 value={movementNotes}
                 onChangeText={setMovementNotes}
                 placeholder="Observações sobre esta movimentação"
@@ -714,7 +784,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
               
               <View style={styles.modalButtons}>
                 <TouchableOpacity 
-                  style={styles.modalCancelButton}
+                  style={[styles.modalCancelButton, { backgroundColor: COLORS.grey }]}
                   onPress={closeMovementModal}
                 >
                   <Text style={styles.modalCancelButtonText}>Cancelar</Text>
@@ -723,7 +793,9 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
                 <TouchableOpacity 
                   style={[
                     styles.modalConfirmButton,
-                    movementType === 'entrada' ? styles.entryButton : styles.exitButton
+                    movementType === 'entrada' ? 
+                      { backgroundColor: COLORS.success } : 
+                      { backgroundColor: COLORS.error }
                   ]}
                   onPress={registerMovement}
                 >
@@ -741,14 +813,13 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   header: {
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     ...Platform.select({
       ios: {
-        shadowColor: COLORS.black,
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 5 },
         shadowOpacity: 0.1,
         shadowRadius: 8,
@@ -763,13 +834,12 @@ const styles = StyleSheet.create({
     paddingBottom: 30,
   },
   card: {
-    backgroundColor: COLORS.white,
     borderRadius: 16,
     padding: 18,
     marginBottom: 16,
     ...Platform.select({
       ios: {
-        shadowColor: COLORS.black,
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 5 },
         shadowOpacity: 0.1,
         shadowRadius: 8,
@@ -786,63 +856,55 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.lightGrey,
+    borderBottomColor: '#f0f0f0',
   },
   codeContainer: {
     flex: 1,
   },
   codeLabel: {
     fontSize: 12,
-    color: COLORS.grey,
   },
   codeValue: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: COLORS.primary,
   },
   editButton: {
-    backgroundColor: COLORS.primaryLight,
     paddingVertical: 8,
     paddingHorizontal: 15,
     borderRadius: 20,
   },
   cancelButton: {
-    backgroundColor: COLORS.grey,
     paddingVertical: 8,
     paddingHorizontal: 15,
     borderRadius: 20,
   },
   editButtonText: {
-    color: COLORS.white,
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '500',
   },
   cancelButtonText: {
-    color: COLORS.white,
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '500',
   },
   label: {
     fontSize: 14,
-    color: COLORS.grey,
     marginTop: 10,
   },
   value: {
     fontSize: 16,
-    color: COLORS.black,
     marginTop: 5,
     marginBottom: 10,
   },
   stockSection: {
     marginTop: 20,
     padding: 15,
-    backgroundColor: COLORS.ultraLightGrey,
     borderRadius: 16,
   },
   stockTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: COLORS.black,
     marginBottom: 15,
     textAlign: 'center',
   },
@@ -852,7 +914,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   quantityButton: {
-    backgroundColor: COLORS.primary,
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -860,7 +921,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     ...Platform.select({
       ios: {
-        shadowColor: COLORS.black,
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 3 },
         shadowOpacity: 0.2,
         shadowRadius: 4,
@@ -871,10 +932,10 @@ const styles = StyleSheet.create({
     }),
   },
   disabledButton: {
-    backgroundColor: COLORS.lightGrey,
+    opacity: 0.5,
   },
   quantityButtonText: {
-    color: COLORS.white,
+    color: '#FFFFFF',
     fontSize: 20,
     fontWeight: 'bold',
   },
@@ -884,7 +945,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     minWidth: 40,
     textAlign: 'center',
-    color: COLORS.black,
   },
   buttonsContainer: {
     flexDirection: 'row',
@@ -899,7 +959,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 5,
     ...Platform.select({
       ios: {
-        shadowColor: COLORS.black,
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 3 },
         shadowOpacity: 0.2,
         shadowRadius: 4,
@@ -910,25 +970,24 @@ const styles = StyleSheet.create({
     }),
   },
   entryButton: {
-    backgroundColor: COLORS.success,
+    backgroundColor: '#2E7D32',
   },
   exitButton: {
-    backgroundColor: COLORS.error,
+    backgroundColor: '#C62828',
   },
   actionButtonText: {
-    color: COLORS.white,
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: 'bold',
   },
   deleteButton: {
-    backgroundColor: COLORS.error,
     padding: 15,
     borderRadius: 25,
     alignItems: 'center',
     marginVertical: 10,
     ...Platform.select({
       ios: {
-        shadowColor: COLORS.black,
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 3 },
         shadowOpacity: 0.2,
         shadowRadius: 4,
@@ -939,7 +998,7 @@ const styles = StyleSheet.create({
     }),
   },
   deleteButtonText: {
-    color: COLORS.white,
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -948,12 +1007,10 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   input: {
-    backgroundColor: COLORS.ultraLightGrey,
     borderRadius: 12,
     padding: 12,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: COLORS.lightGrey,
     marginTop: 5,
     marginBottom: 15,
   },
@@ -962,14 +1019,13 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   saveButton: {
-    backgroundColor: COLORS.success,
     padding: 15,
     borderRadius: 25,
     alignItems: 'center',
     marginTop: 10,
     ...Platform.select({
       ios: {
-        shadowColor: COLORS.black,
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 3 },
         shadowOpacity: 0.2,
         shadowRadius: 4,
@@ -980,19 +1036,18 @@ const styles = StyleSheet.create({
     }),
   },
   saveButtonText: {
-    color: COLORS.white,
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
   },
   // Styles for history
   historyCard: {
-    backgroundColor: COLORS.white,
     borderRadius: 16,
     padding: 18,
     marginBottom: 16,
     ...Platform.select({
       ios: {
-        shadowColor: COLORS.black,
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 5 },
         shadowOpacity: 0.1,
         shadowRadius: 8,
@@ -1005,7 +1060,6 @@ const styles = StyleSheet.create({
   historyTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.black,
     marginBottom: 15,
     textAlign: 'center',
   },
@@ -1014,7 +1068,6 @@ const styles = StyleSheet.create({
   },
   emptyHistoryText: {
     textAlign: 'center',
-    color: COLORS.grey,
     fontSize: 14,
     marginVertical: 20,
     fontStyle: 'italic',
@@ -1025,20 +1078,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingRight: 8,
     marginBottom: 16,
-    backgroundColor: COLORS.ultraLightGrey,
     borderRadius: 10,
   },
   entryItemBorder: {
-    borderLeftColor: COLORS.success,
+    borderLeftColor: '#2E7D32',
   },
   exitItemBorder: {
-    borderLeftColor: COLORS.error,
-  },
-  entryText: {
-    color: COLORS.success,
-  },
-  exitText: {
-    color: COLORS.error,
+    borderLeftColor: '#C62828',
   },
   movementHeader: {
     flexDirection: 'row',
@@ -1051,7 +1097,6 @@ const styles = StyleSheet.create({
   },
   movementDate: {
     fontSize: 12,
-    color: COLORS.grey,
   },
   movementDetails: {
     marginTop: 5,
@@ -1062,7 +1107,6 @@ const styles = StyleSheet.create({
   },
   movementNotes: {
     fontSize: 14,
-    color: COLORS.grey,
     marginTop: 5,
     fontStyle: 'italic',
   },
@@ -1074,14 +1118,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: COLORS.white,
     borderRadius: 20,
     width: '85%',
     maxWidth: 400,
     overflow: 'hidden',
     ...Platform.select({
       ios: {
-        shadowColor: COLORS.black,
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 6 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
@@ -1098,7 +1141,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.white,
+    color: '#FFFFFF',
   },
   modalBody: {
     padding: 20,
@@ -1106,16 +1149,13 @@ const styles = StyleSheet.create({
   modalLabel: {
     fontSize: 16,
     marginBottom: 8,
-    color: COLORS.black,
     fontWeight: '500',
   },
   modalInput: {
-    backgroundColor: COLORS.ultraLightGrey,
     borderRadius: 12,
     padding: 12,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: COLORS.lightGrey,
     marginBottom: 16,
   },
   modalTextArea: {
@@ -1129,7 +1169,6 @@ const styles = StyleSheet.create({
   },
   modalCancelButton: {
     flex: 1,
-    backgroundColor: COLORS.grey,
     padding: 14,
     borderRadius: 25,
     alignItems: 'center',
@@ -1142,12 +1181,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalCancelButtonText: {
-    color: COLORS.white,
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '500',
   },
   modalConfirmButtonText: {
-    color: COLORS.white,
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // Estilos para o botão de IA
+  aiButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 25,
+    marginBottom: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  aiButtonIcon: {
+    fontSize: 18,
+    marginRight: 10,
+    color: '#FFFFFF',
+  },
+  aiButtonText: {
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },

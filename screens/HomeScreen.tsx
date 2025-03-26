@@ -1,3 +1,4 @@
+// screens/HomeScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   StyleSheet, 
@@ -20,6 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Header from '../components/Header';
 import ConnectionStatus from '../components/ConnectionStatus';
 import { verificarConexao, sincronizarDados } from '../services/api';
+import { useTheme } from '../contexts/ThemeContext';
 import { RootStackParamList } from '../App';
 
 // Definição do tipo para as propriedades de navegação
@@ -36,37 +38,13 @@ interface Product {
   quantity?: number;
 }
 
-// Definir cores do tema
-const COLORS = {
-  primary: '#1565C0',
-  primaryDark: '#0D47A1',
-  primaryLight: '#42A5F5',
-  accent: '#FF6F00',
-  accentLight: '#FFA726',
-  success: '#2E7D32',
-  successLight: '#81C784',
-  warning: '#F57F17',
-  warningLight: '#FFD54F',
-  error: '#C62828',
-  errorLight: '#EF5350',
-  info: '#0288D1',
-  infoLight: '#4FC3F7',
-  white: '#FFFFFF',
-  black: '#212121',
-  grey: '#757575',
-  lightGrey: '#EEEEEE',
-  ultraLightGrey: '#F5F5F5',
-  background: '#F7F9FD',
-  cardBackground: '#FFFFFF',
-  gradientStart: '#1976D2',
-  gradientEnd: '#0D47A1',
-};
-
-// Dimensões da tela
 const windowWidth = Dimensions.get('window').width;
 const windowHeight = Dimensions.get('window').height;
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
+  const { theme } = useTheme();
+  const { COLORS } = theme;
+
   const [totalProducts, setTotalProducts] = useState<number>(0);
   const [lowStockCount, setLowStockCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
@@ -80,7 +58,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
   
   // Animations for menu items
-  const menuAnimations = useRef(Array(6).fill(0).map(() => new Animated.Value(0))).current;
+  const menuAnimations = useRef(Array(8).fill(0).map(() => new Animated.Value(0))).current;
 
   // Verify if it's first use
   useEffect(() => {
@@ -207,12 +185,12 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   }, [navigation]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: COLORS.background }]}>
       <StatusBar backgroundColor={COLORS.primaryDark} barStyle="light-content" />
       
       {/* Header with Gradient */}
       <LinearGradient
-        colors={[COLORS.gradientStart, COLORS.gradientEnd]}
+        colors={[COLORS.primary, COLORS.primaryDark]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.headerGradient}
@@ -266,8 +244,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         {/* Dashboard cards */}
         <View style={styles.dashboardContainer}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Resumo do Estoque</Text>
-            <Text style={styles.updateText}>Atualizado: {lastUpdate}</Text>
+            <Text style={[styles.sectionTitle, { color: COLORS.black }]}>Resumo do Estoque</Text>
+            <Text style={[styles.updateText, { color: COLORS.grey }]}>Atualizado: {lastUpdate}</Text>
           </View>
           
           {loading ? (
@@ -348,7 +326,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         
         {/* Main menu */}
         <View style={styles.menuSection}>
-          <Text style={styles.sectionTitle}>Menu Principal</Text>
+          <Text style={[styles.sectionTitle, { color: COLORS.black }]}>Menu Principal</Text>
           
           <View style={styles.menuGrid}>
             <Animated.View style={{
@@ -362,7 +340,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               ]
             }}>
               <TouchableOpacity 
-                style={[styles.menuItem, styles.elevatedCard]} 
+                style={[styles.menuItem, styles.elevatedCard, { backgroundColor: COLORS.card }]} 
                 onPress={() => navigation.navigate('Scanner')}
                 activeOpacity={0.7}
               >
@@ -374,7 +352,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                 >
                   <Text style={styles.menuIcon}>📷</Text>
                 </LinearGradient>
-                <Text style={styles.menuText}>Escanear QR</Text>
+                <Text style={[styles.menuText, { color: COLORS.text }]}>Escanear QR</Text>
               </TouchableOpacity>
             </Animated.View>
 
@@ -389,7 +367,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               ]
             }}>
               <TouchableOpacity 
-                style={[styles.menuItem, styles.elevatedCard]} 
+                style={[styles.menuItem, styles.elevatedCard, { backgroundColor: COLORS.card }]} 
                 onPress={() => navigation.navigate('ProductList')}
                 activeOpacity={0.7}
               >
@@ -401,7 +379,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                 >
                   <Text style={styles.menuIcon}>📋</Text>
                 </LinearGradient>
-                <Text style={styles.menuText}>Produtos</Text>
+                <Text style={[styles.menuText, { color: COLORS.text }]}>Produtos</Text>
               </TouchableOpacity>
             </Animated.View>
 
@@ -416,7 +394,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               ]
             }}>
               <TouchableOpacity 
-                style={[styles.menuItem, styles.elevatedCard]} 
+                style={[styles.menuItem, styles.elevatedCard, { backgroundColor: COLORS.card }]} 
                 onPress={() => navigation.navigate('AddProduct')}
                 activeOpacity={0.7}
               >
@@ -428,7 +406,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                 >
                   <Text style={styles.menuIcon}>➕</Text>
                 </LinearGradient>
-                <Text style={styles.menuText}>Adicionar</Text>
+                <Text style={[styles.menuText, { color: COLORS.text }]}>Adicionar</Text>
               </TouchableOpacity>
             </Animated.View>
 
@@ -443,7 +421,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               ]
             }}>
               <TouchableOpacity 
-                style={[styles.menuItem, styles.elevatedCard]} 
+                style={[styles.menuItem, styles.elevatedCard, { backgroundColor: COLORS.card }]} 
                 onPress={() => navigation.navigate('Dashboard')}
                 activeOpacity={0.7}
               >
@@ -455,10 +433,11 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                 >
                   <Text style={styles.menuIcon}>📊</Text>
                 </LinearGradient>
-                <Text style={styles.menuText}>Dashboard</Text>
+                <Text style={[styles.menuText, { color: COLORS.text }]}>Dashboard</Text>
               </TouchableOpacity>
             </Animated.View>
             
+            {/* Nova opção: Dashboard Inteligente */}
             <Animated.View style={{
               opacity: menuAnimations[4],
               transform: [
@@ -470,19 +449,19 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               ]
             }}>
               <TouchableOpacity 
-                style={[styles.menuItem, styles.elevatedCard]} 
-                onPress={() => navigation.navigate('History')}
+                style={[styles.menuItem, styles.elevatedCard, { backgroundColor: COLORS.card }]} 
+                onPress={() => navigation.navigate('SmartDashboard')}
                 activeOpacity={0.7}
               >
                 <LinearGradient
-                  colors={['#8E24AA', '#4A148C']}
+                  colors={['#5E35B1', '#4527A0']} // Roxo
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.menuIconBg}
                 >
-                  <Text style={styles.menuIcon}>📜</Text>
+                  <Text style={styles.menuIcon}>🧠</Text>
                 </LinearGradient>
-                <Text style={styles.menuText}>Histórico</Text>
+                <Text style={[styles.menuText, { color: COLORS.text }]}>IA Dashboard</Text>
               </TouchableOpacity>
             </Animated.View>
             
@@ -497,7 +476,62 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               ]
             }}>
               <TouchableOpacity 
-                style={[styles.menuItem, styles.elevatedCard]} 
+                style={[styles.menuItem, styles.elevatedCard, { backgroundColor: COLORS.card }]} 
+                onPress={() => navigation.navigate('History')}
+                activeOpacity={0.7}
+              >
+                <LinearGradient
+                  colors={['#8E24AA', '#4A148C']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.menuIconBg}
+                >
+                  <Text style={styles.menuIcon}>📜</Text>
+                </LinearGradient>
+                <Text style={[styles.menuText, { color: COLORS.text }]}>Histórico</Text>
+              </TouchableOpacity>
+            </Animated.View>
+            
+            {/* Nova opção: Lista de Compras Inteligente */}
+            <Animated.View style={{
+              opacity: menuAnimations[6],
+              transform: [
+                { scale: menuAnimations[6] },
+                { translateY: menuAnimations[6].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [20, 0],
+                }) }
+              ]
+            }}>
+              <TouchableOpacity 
+                style={[styles.menuItem, styles.elevatedCard, { backgroundColor: COLORS.card }]} 
+                onPress={() => navigation.navigate('ShoppingList')}
+                activeOpacity={0.7}
+              >
+                <LinearGradient
+                  colors={['#D81B60', '#AD1457']} // Rosa
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.menuIconBg}
+                >
+                  <Text style={styles.menuIcon}>🛒</Text>
+                </LinearGradient>
+                <Text style={[styles.menuText, { color: COLORS.text }]}>Lista Compras</Text>
+              </TouchableOpacity>
+            </Animated.View>
+            
+            <Animated.View style={{
+              opacity: menuAnimations[7],
+              transform: [
+                { scale: menuAnimations[7] },
+                { translateY: menuAnimations[7].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [20, 0],
+                }) }
+              ]
+            }}>
+              <TouchableOpacity 
+                style={[styles.menuItem, styles.elevatedCard, { backgroundColor: COLORS.card }]} 
                 onPress={() => navigation.navigate('Settings')}
                 activeOpacity={0.7}
               >
@@ -509,7 +543,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                 >
                   <Text style={styles.menuIcon}>⚙️</Text>
                 </LinearGradient>
-                <Text style={styles.menuText}>Configurações</Text>
+                <Text style={[styles.menuText, { color: COLORS.text }]}>Configurações</Text>
               </TouchableOpacity>
             </Animated.View>
           </View>
@@ -517,7 +551,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
         {/* Quick actions */}
         <View style={styles.quickActionsContainer}>
-          <Text style={styles.sectionTitle}>Ações Rápidas</Text>
+          <Text style={[styles.sectionTitle, { color: COLORS.black }]}>Ações Rápidas</Text>
           
           <Animated.View style={{
             opacity: fadeAnim,
@@ -534,7 +568,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               activeOpacity={0.7}
             >
               <LinearGradient
-                colors={[COLORS.success, COLORS.successLight]}
+                colors={[COLORS.success, '#81C784']} // Substituindo COLORS.successLight
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.actionGradient}
@@ -586,7 +620,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               activeOpacity={0.7}
             >
               <LinearGradient
-                colors={[COLORS.info, COLORS.infoLight]}
+                colors={[COLORS.info, '#4FC3F7']} // Substituindo COLORS.infoLight
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.actionGradient}
@@ -602,6 +636,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             </TouchableOpacity>
           </Animated.View>
           
+          {/* Nova ação para Lista de Compras Inteligente */}
           <Animated.View style={{
             opacity: fadeAnim,
             transform: [
@@ -613,21 +648,21 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           }}>
             <TouchableOpacity 
               style={[styles.actionButton, styles.elevatedCard]}
-              onPress={() => navigation.navigate('Settings')}
+              onPress={() => navigation.navigate('SmartDashboard')}
               activeOpacity={0.7}
             >
               <LinearGradient
-                colors={[COLORS.accent, COLORS.accentLight]}
+                colors={['#5E35B1', '#7E57C2']} // Roxo (para análise IA)
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.actionGradient}
               >
                 <View style={styles.actionIconContainer}>
-                  <Text style={styles.actionIcon}>⚙️</Text>
+                  <Text style={styles.actionIcon}>🧠</Text>
                 </View>
                 <View style={styles.actionTextContainer}>
-                  <Text style={styles.actionTitle}>Configurações</Text>
-                  <Text style={styles.actionDescription}>Personalize o aplicativo</Text>
+                  <Text style={styles.actionTitle}>Análise Inteligente</Text>
+                  <Text style={styles.actionDescription}>Visualizar análises e previsões de estoque</Text>
                 </View>
               </LinearGradient>
             </TouchableOpacity>
@@ -635,8 +670,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>RLS Automação Industrial © {new Date().getFullYear()}</Text>
-          <Text style={styles.versionText}>Versão 1.0.0</Text>
+          <Text style={[styles.footerText, { color: COLORS.grey }]}>RLS Automação Industrial © {new Date().getFullYear()}</Text>
+          <Text style={[styles.versionText, { color: COLORS.grey }]}>Versão 1.0.0</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -648,7 +683,6 @@ const cardWidth = (windowWidth - 60) / 3;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   headerGradient: {
     width: '100%',
@@ -726,12 +760,12 @@ const styles = StyleSheet.create({
   welcomeTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: COLORS.white,
+    color: '#FFFFFF',
     marginBottom: 8,
   },
   welcomeText: {
     fontSize: 15,
-    color: COLORS.white,
+    color: '#FFFFFF',
     opacity: 0.9,
   },
   dashboardContainer: {
@@ -748,11 +782,9 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.black,
   },
   updateText: {
     fontSize: 12,
-    color: COLORS.grey,
     fontStyle: 'italic',
   },
   cardsContainer: {
@@ -798,11 +830,11 @@ const styles = StyleSheet.create({
   cardValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: COLORS.white,
+    color: '#FFFFFF',
   },
   cardLabel: {
     fontSize: 12,
-    color: COLORS.white,
+    color: '#FFFFFF',
     marginTop: 5,
     opacity: 0.9,
   },
@@ -818,7 +850,6 @@ const styles = StyleSheet.create({
   },
   menuItem: {
     width: (windowWidth - 45) / 2,
-    backgroundColor: COLORS.white,
     borderRadius: 20,
     padding: 15,
     alignItems: 'center',
@@ -834,13 +865,12 @@ const styles = StyleSheet.create({
   },
   menuIcon: {
     fontSize: 24,
-    color: COLORS.white,
+    color: '#FFFFFF',
   },
   menuText: {
     fontSize: 16,
     fontWeight: '500',
     marginTop: 10,
-    color: COLORS.black,
   },
   quickActionsContainer: {
     padding: 15,
@@ -874,11 +904,11 @@ const styles = StyleSheet.create({
   actionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.white,
+    color: '#FFFFFF',
   },
   actionDescription: {
     fontSize: 13,
-    color: COLORS.white,
+    color: '#FFFFFF',
     opacity: 0.9,
     marginTop: 4,
   },
@@ -893,11 +923,9 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 12,
-    color: COLORS.grey,
   },
   versionText: {
     fontSize: 12,
-    color: COLORS.grey,
     marginTop: 3,
   },
 });
