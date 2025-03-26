@@ -12,7 +12,8 @@
       "backgroundColor": "#1565C0"
     },
     "updates": {
-      "fallbackToCacheTimeout": 0
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/93d7ba51-c680-4688-9395-1e54aa4a11d3"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -27,7 +28,10 @@
         "backgroundColor": "#1565C0"
       },
       "package": "com.rlsautomacao.estoque",
-      "permissions": ["INTERNET"]
+      "permissions": [
+        "INTERNET",
+        "INTERNET"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

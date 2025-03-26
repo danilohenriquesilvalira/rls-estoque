@@ -1,3 +1,4 @@
+// screens/DashboardScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
@@ -61,6 +62,9 @@ const COLORS = {
   lightGrey: '#EEEEEE',
   ultraLightGrey: '#F5F5F5',
   background: '#F5F7FA',
+  text: '#212121',          // Adicionando text
+  textSecondary: '#757575', // Adicionando textSecondary
+  card: '#FFFFFF',          // Adicionando card
 };
 
 // Screen dimensions
@@ -81,6 +85,7 @@ const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const barAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current; // Adicionando slideAnim
   const topProductsAnim = useRef<Animated.Value[]>([]).current;
   const movementsAnim = useRef<Animated.Value[]>([]).current;
 
@@ -136,6 +141,12 @@ const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
         Animated.parallel([
           Animated.timing(fadeAnim, {
             toValue: 1,
+            duration: 600,
+            useNativeDriver: true,
+            easing: Easing.out(Easing.ease)
+          }),
+          Animated.timing(slideAnim, {
+            toValue: 0,
             duration: 600,
             useNativeDriver: true,
             easing: Easing.out(Easing.ease)
@@ -419,6 +430,39 @@ const DashboardScreen = ({ navigation }: DashboardScreenProps) => {
             })
           )}
         </View>
+        
+        {/* Link para Produtos Críticos */}
+        <Animated.View style={[
+          styles.linkCard,
+          { 
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+            backgroundColor: COLORS.card,
+          }
+        ]}>
+          <TouchableOpacity 
+            style={styles.criticalLink}
+            onPress={() => navigation.navigate('CriticalProducts')}
+          >
+            <LinearGradient
+              colors={[COLORS.error, '#C62828']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.criticalLinkGradient}
+            >
+              <View style={styles.criticalIconContainer}>
+                <Text style={styles.criticalIcon}>⚠️</Text>
+              </View>
+              <View style={styles.criticalTextContainer}>
+                <Text style={styles.criticalLinkTitle}>Produtos Críticos</Text>
+                <Text style={styles.criticalLinkDescription}>
+                  Visualize e gerencie produtos com estoque baixo ou esgotado
+                </Text>
+              </View>
+              <Text style={styles.criticalLinkArrow}>→</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </Animated.View>
 
         {/* Latest Movements */}
         <View style={styles.sectionCard}>
@@ -811,6 +855,64 @@ const styles = StyleSheet.create({
     color: COLORS.grey,
     fontStyle: 'italic',
   },
+  // Novos estilos para o card de link para Produtos Críticos
+  linkCard: {
+    borderRadius: 16,
+    marginBottom: 16,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  criticalLink: {
+    width: '100%',
+  },
+  criticalLinkGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 16,
+  },
+  criticalIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  criticalIcon: {
+    fontSize: 20,
+  },
+  criticalTextContainer: {
+    flex: 1,
+  },
+  criticalLinkTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  criticalLinkDescription: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    opacity: 0.9,
+  },
+  criticalLinkArrow: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginLeft: 10,
+  }
 });
 
 export default DashboardScreen;

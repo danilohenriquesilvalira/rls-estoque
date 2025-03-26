@@ -19,6 +19,7 @@ import HistoryScreen from './screens/HistoryScreen';
 // Novas telas inteligentes
 import SmartDashboardScreen from './screens/SmartDashboardScreen';
 import ShoppingListScreen from './screens/ShoppingListScreen';
+import CriticalProductsScreen from './screens/CriticalProductsScreen';
 
 // Definição dos tipos para navegação
 export type RootStackParamList = {
@@ -36,6 +37,7 @@ export type RootStackParamList = {
   // Novas rotas
   SmartDashboard: undefined;
   ShoppingList: undefined;
+  CriticalProducts: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -75,6 +77,13 @@ export default function App() {
             component={ShoppingListScreen}
             options={{
               animation: 'fade_from_bottom'
+            }}
+          />
+          <Stack.Screen 
+            name="CriticalProducts" 
+            component={CriticalProductsScreen}
+            options={{
+              animation: 'slide_from_right'
             }}
           />
         </Stack.Navigator>

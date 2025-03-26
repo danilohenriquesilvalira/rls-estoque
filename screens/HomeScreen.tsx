@@ -57,8 +57,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const slideAnim = useRef(new Animated.Value(50)).current;
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
   
-  // Animations for menu items
-  const menuAnimations = useRef(Array(8).fill(0).map(() => new Animated.Value(0))).current;
+  // Animations for menu items - adding one more animation for the new critical products button
+  const menuAnimations = useRef(Array(10).fill(0).map(() => new Animated.Value(0))).current;
 
   // Verify if it's first use
   useEffect(() => {
@@ -546,6 +546,34 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                 <Text style={[styles.menuText, { color: COLORS.text }]}>Configurações</Text>
               </TouchableOpacity>
             </Animated.View>
+            
+            {/* Nova opção: Produtos Críticos */}
+            <Animated.View style={{
+              opacity: menuAnimations[9],
+              transform: [
+                { scale: menuAnimations[9] },
+                { translateY: menuAnimations[9].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [20, 0],
+                }) }
+              ]
+            }}>
+              <TouchableOpacity 
+                style={[styles.menuItem, styles.elevatedCard, { backgroundColor: COLORS.card }]} 
+                onPress={() => navigation.navigate('CriticalProducts')}
+                activeOpacity={0.7}
+              >
+                <LinearGradient
+                  colors={[COLORS.error, '#C62828']} // Vermelho
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.menuIconBg}
+                >
+                  <Text style={styles.menuIcon}>⚠️</Text>
+                </LinearGradient>
+                <Text style={[styles.menuText, { color: COLORS.text }]}>Produtos Críticos</Text>
+              </TouchableOpacity>
+            </Animated.View>
           </View>
         </View>
 
@@ -636,7 +664,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             </TouchableOpacity>
           </Animated.View>
           
-          {/* Nova ação para Lista de Compras Inteligente */}
+          {/* Nova ação para IA Dashboard */}
           <Animated.View style={{
             opacity: fadeAnim,
             transform: [
@@ -663,6 +691,38 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                 <View style={styles.actionTextContainer}>
                   <Text style={styles.actionTitle}>Análise Inteligente</Text>
                   <Text style={styles.actionDescription}>Visualizar análises e previsões de estoque</Text>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          </Animated.View>
+          
+          {/* Nova ação para Produtos Críticos */}
+          <Animated.View style={{
+            opacity: fadeAnim,
+            transform: [
+              { translateY: fadeAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [40, 0],
+              })}
+            ]
+          }}>
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.elevatedCard]}
+              onPress={() => navigation.navigate('CriticalProducts')}
+              activeOpacity={0.7}
+            >
+              <LinearGradient
+                colors={[COLORS.error, '#D50000']} // Vermelho mais escuro
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.actionGradient}
+              >
+                <View style={styles.actionIconContainer}>
+                  <Text style={styles.actionIcon}>⚠️</Text>
+                </View>
+                <View style={styles.actionTextContainer}>
+                  <Text style={styles.actionTitle}>Ver Produtos Críticos</Text>
+                  <Text style={styles.actionDescription}>Gerencie itens com estoque baixo ou esgotado</Text>
                 </View>
               </LinearGradient>
             </TouchableOpacity>
