@@ -12,16 +12,15 @@ import {
   Animated,
   Image,
   Dimensions,
-  ImageBackground,
   Platform
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { LinearGradient } from 'expo-linear-gradient';
 import Header from '../components/Header';
 import ConnectionStatus from '../components/ConnectionStatus';
 import { verificarConexao, sincronizarDados } from '../services/api';
 import { RootStackParamList } from '../App';
-import { LinearGradient } from 'expo-linear-gradient';
 
 // Definição do tipo para as propriedades de navegação
 type HomeScreenProps = {
@@ -65,6 +64,7 @@ const COLORS = {
 
 // Dimensões da tela
 const windowWidth = Dimensions.get('window').width;
+const windowHeight = Dimensions.get('window').height;
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
   const [totalProducts, setTotalProducts] = useState<number>(0);
@@ -74,30 +74,33 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const [lastUpdate, setLastUpdate] = useState<string>('');
   const [shouldShowServerConfig, setShouldShowServerConfig] = useState<boolean>(false);
 
-  // Animações
+  // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
+  
+  // Animations for menu items
+  const menuAnimations = useRef(Array(6).fill(0).map(() => new Animated.Value(0))).current;
 
-  // Verificar se é o primeiro uso
+  // Verify if it's first use
   useEffect(() => {
     const checkFirstRun = async () => {
       try {
         const firstRun = await AsyncStorage.getItem('@first_run');
         if (firstRun === null) {
-          // É a primeira execução
+          // First run
           setShouldShowServerConfig(true);
           await AsyncStorage.setItem('@first_run', 'false');
         }
       } catch (error) {
-        console.error("Erro ao verificar primeira execução:", error);
+        console.error("Error checking first run:", error);
       }
     };
     
     checkFirstRun();
   }, []);
 
-  // Mostrar configuração de servidor se for a primeira vez
+  // Show server config if it's first time
   useEffect(() => {
     if (shouldShowServerConfig) {
       Alert.alert(
@@ -118,8 +121,9 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     }
   }, [shouldShowServerConfig, navigation]);
 
-  // Iniciar animações quando o componente montar
+  // Start animations when component mounts
   useEffect(() => {
+    // Main animations
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -137,15 +141,28 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         useNativeDriver: true,
       })
     ]).start();
-  }, [fadeAnim, slideAnim, scaleAnim]);
+    
+    // Staggered animations for menu items
+    Animated.stagger(
+      100,
+      menuAnimations.map(anim => 
+        Animated.spring(anim, {
+          toValue: 1,
+          friction: 6,
+          tension: 40,
+          useNativeDriver: true,
+        })
+      )
+    ).start();
+  }, [fadeAnim, slideAnim, scaleAnim, menuAnimations]);
 
-  // Carregar dados resumidos do estoque
+  // Load inventory summary data
   useEffect(() => {
     const loadInventorySummary = async () => {
       try {
         setLoading(true);
         
-        // Tentar conectar ao servidor primeiro
+        // Try to connect to server first
         await verificarConexao();
         
         const jsonValue = await AsyncStorage.getItem('produtos');
@@ -154,38 +171,38 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           const products: Product[] = JSON.parse(jsonValue);
           setTotalProducts(products.length);
           
-          // Contar produtos com estoque baixo (menos de 5 unidades)
+          // Count products with low stock (less than 5 units)
           const lowStock = products.filter(p => p.quantidade < 5).length;
           setLowStockCount(lowStock);
 
-          // Contar total de itens em estoque
+          // Count total items in stock
           const total = products.reduce((sum: number, p: Product) => sum + p.quantidade, 0);
           setTotalItems(total);
         } else {
-          // Nenhum produto encontrado
+          // No products found
           setTotalProducts(0);
           setLowStockCount(0);
           setTotalItems(0);
         }
         
-        // Registrar horário da atualização
+        // Register update time
         setLastUpdate(new Date().toLocaleTimeString());
       } catch (error) {
-        console.error("Erro ao carregar resumo do estoque:", error);
+        console.error("Error loading inventory summary:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    // Executar ao montar o componente
+    // Execute when component mounts
     loadInventorySummary();
     
-    // Configurar um ouvinte de foco para atualizar quando a tela receber foco
+    // Set up a focus listener to update when screen receives focus
     const unsubscribe = navigation.addListener('focus', () => {
       loadInventorySummary();
     });
 
-    // Limpeza ao desmontar
+    // Cleanup when unmounting
     return unsubscribe;
   }, [navigation]);
 
@@ -193,26 +210,28 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={COLORS.primaryDark} barStyle="light-content" />
       
-      {/* Header com Gradiente */}
+      {/* Header with Gradient */}
       <LinearGradient
         colors={[COLORS.gradientStart, COLORS.gradientEnd]}
         start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
+        end={{ x: 1, y: 1 }}
         style={styles.headerGradient}
       >
         <Header showLogo={true} />
+        
+        {/* Connection Status inside header gradient for cleaner look */}
+        <View style={styles.connectionContainer}>
+          <ConnectionStatus 
+            onConfigPress={() => navigation.navigate('ServerConfig')}
+          />
+        </View>
       </LinearGradient>
-      
-      {/* Status de Conexão */}
-      <ConnectionStatus 
-        onConfigPress={() => navigation.navigate('ServerConfig')}
-      />
       
       <ScrollView 
         contentContainerStyle={styles.scrollContainer} 
         showsVerticalScrollIndicator={false}
       >
-        {/* Banner de boas-vindas com Gradiente */}
+        {/* Welcome card with Gradient */}
         <Animated.View style={[
           styles.welcomeCardContainer, 
           { 
@@ -231,7 +250,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           >
             <View style={styles.welcomeContent}>
               <Text style={styles.welcomeTitle}>
-                Bem-vindo ao Sistema de Gestão
+                Bem-vindo ao Sistema
               </Text>
               <Text style={styles.welcomeText}>
                 Controle seu estoque com facilidade e eficiência
@@ -244,7 +263,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           </LinearGradient>
         </Animated.View>
         
-        {/* Cartões de resumo */}
+        {/* Dashboard cards */}
         <View style={styles.dashboardContainer}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Resumo do Estoque</Text>
@@ -268,7 +287,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                   colors={[COLORS.primary, COLORS.primaryDark]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={styles.card}
+                  style={[styles.card, styles.elevatedCard]}
                 >
                   <View style={styles.cardIcon}>
                     <Text style={styles.iconText}>📦</Text>
@@ -291,7 +310,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                   colors={[COLORS.success, '#1B5E20']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={styles.card}
+                  style={[styles.card, styles.elevatedCard]}
                 >
                   <View style={styles.cardIcon}>
                     <Text style={styles.iconText}>🧮</Text>
@@ -314,7 +333,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                   colors={lowStockCount > 0 ? [COLORS.warning, '#E65100'] : [COLORS.grey, '#424242']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={styles.card}
+                  style={[styles.card, styles.elevatedCard]}
                 >
                   <View style={styles.cardIcon}>
                     <Text style={styles.iconText}>⚠️</Text>
@@ -327,187 +346,292 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           )}
         </View>
         
-        {/* Menu principal */}
+        {/* Main menu */}
         <View style={styles.menuSection}>
           <Text style={styles.sectionTitle}>Menu Principal</Text>
           
           <View style={styles.menuGrid}>
-            <TouchableOpacity 
-              style={styles.menuItem} 
-              onPress={() => navigation.navigate('Scanner')}
-            >
-              <LinearGradient
-                colors={[COLORS.primary, COLORS.primaryDark]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.menuIconBg}
+            <Animated.View style={{
+              opacity: menuAnimations[0],
+              transform: [
+                { scale: menuAnimations[0] },
+                { translateY: menuAnimations[0].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [20, 0],
+                }) }
+              ]
+            }}>
+              <TouchableOpacity 
+                style={[styles.menuItem, styles.elevatedCard]} 
+                onPress={() => navigation.navigate('Scanner')}
+                activeOpacity={0.7}
               >
-                <Text style={styles.menuIcon}>📷</Text>
-              </LinearGradient>
-              <Text style={styles.menuText}>Escanear QR</Text>
-            </TouchableOpacity>
+                <LinearGradient
+                  colors={[COLORS.primary, COLORS.primaryDark]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.menuIconBg}
+                >
+                  <Text style={styles.menuIcon}>📷</Text>
+                </LinearGradient>
+                <Text style={styles.menuText}>Escanear QR</Text>
+              </TouchableOpacity>
+            </Animated.View>
 
-            <TouchableOpacity 
-              style={styles.menuItem} 
-              onPress={() => navigation.navigate('ProductList')}
-            >
-              <LinearGradient
-                colors={[COLORS.accent, '#E65100']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.menuIconBg}
+            <Animated.View style={{
+              opacity: menuAnimations[1],
+              transform: [
+                { scale: menuAnimations[1] },
+                { translateY: menuAnimations[1].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [20, 0],
+                }) }
+              ]
+            }}>
+              <TouchableOpacity 
+                style={[styles.menuItem, styles.elevatedCard]} 
+                onPress={() => navigation.navigate('ProductList')}
+                activeOpacity={0.7}
               >
-                <Text style={styles.menuIcon}>📋</Text>
-              </LinearGradient>
-              <Text style={styles.menuText}>Produtos</Text>
-            </TouchableOpacity>
+                <LinearGradient
+                  colors={[COLORS.accent, '#E65100']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.menuIconBg}
+                >
+                  <Text style={styles.menuIcon}>📋</Text>
+                </LinearGradient>
+                <Text style={styles.menuText}>Produtos</Text>
+              </TouchableOpacity>
+            </Animated.View>
 
-            <TouchableOpacity 
-              style={styles.menuItem} 
-              onPress={() => navigation.navigate('AddProduct')}
-            >
-              <LinearGradient
-                colors={[COLORS.success, '#1B5E20']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.menuIconBg}
+            <Animated.View style={{
+              opacity: menuAnimations[2],
+              transform: [
+                { scale: menuAnimations[2] },
+                { translateY: menuAnimations[2].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [20, 0],
+                }) }
+              ]
+            }}>
+              <TouchableOpacity 
+                style={[styles.menuItem, styles.elevatedCard]} 
+                onPress={() => navigation.navigate('AddProduct')}
+                activeOpacity={0.7}
               >
-                <Text style={styles.menuIcon}>➕</Text>
-              </LinearGradient>
-              <Text style={styles.menuText}>Adicionar</Text>
-            </TouchableOpacity>
+                <LinearGradient
+                  colors={[COLORS.success, '#1B5E20']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.menuIconBg}
+                >
+                  <Text style={styles.menuIcon}>➕</Text>
+                </LinearGradient>
+                <Text style={styles.menuText}>Adicionar</Text>
+              </TouchableOpacity>
+            </Animated.View>
 
-            <TouchableOpacity 
-              style={styles.menuItem} 
-              onPress={() => navigation.navigate('Dashboard')}
-            >
-              <LinearGradient
-                colors={[COLORS.info, '#01579B']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.menuIconBg}
+            <Animated.View style={{
+              opacity: menuAnimations[3],
+              transform: [
+                { scale: menuAnimations[3] },
+                { translateY: menuAnimations[3].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [20, 0],
+                }) }
+              ]
+            }}>
+              <TouchableOpacity 
+                style={[styles.menuItem, styles.elevatedCard]} 
+                onPress={() => navigation.navigate('Dashboard')}
+                activeOpacity={0.7}
               >
-                <Text style={styles.menuIcon}>📊</Text>
-              </LinearGradient>
-              <Text style={styles.menuText}>Dashboard</Text>
-            </TouchableOpacity>
+                <LinearGradient
+                  colors={[COLORS.info, '#01579B']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.menuIconBg}
+                >
+                  <Text style={styles.menuIcon}>📊</Text>
+                </LinearGradient>
+                <Text style={styles.menuText}>Dashboard</Text>
+              </TouchableOpacity>
+            </Animated.View>
             
-            <TouchableOpacity 
-              style={styles.menuItem} 
-              onPress={() => navigation.navigate('History')}
-            >
-              <LinearGradient
-                colors={['#8E24AA', '#4A148C']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.menuIconBg}
+            <Animated.View style={{
+              opacity: menuAnimations[4],
+              transform: [
+                { scale: menuAnimations[4] },
+                { translateY: menuAnimations[4].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [20, 0],
+                }) }
+              ]
+            }}>
+              <TouchableOpacity 
+                style={[styles.menuItem, styles.elevatedCard]} 
+                onPress={() => navigation.navigate('History')}
+                activeOpacity={0.7}
               >
-                <Text style={styles.menuIcon}>📜</Text>
-              </LinearGradient>
-              <Text style={styles.menuText}>Histórico</Text>
-            </TouchableOpacity>
+                <LinearGradient
+                  colors={['#8E24AA', '#4A148C']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.menuIconBg}
+                >
+                  <Text style={styles.menuIcon}>📜</Text>
+                </LinearGradient>
+                <Text style={styles.menuText}>Histórico</Text>
+              </TouchableOpacity>
+            </Animated.View>
             
-            <TouchableOpacity 
-              style={styles.menuItem} 
-              onPress={() => navigation.navigate('Settings')}
-            >
-              <LinearGradient
-                colors={['#757575', '#424242']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.menuIconBg}
+            <Animated.View style={{
+              opacity: menuAnimations[5],
+              transform: [
+                { scale: menuAnimations[5] },
+                { translateY: menuAnimations[5].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [20, 0],
+                }) }
+              ]
+            }}>
+              <TouchableOpacity 
+                style={[styles.menuItem, styles.elevatedCard]} 
+                onPress={() => navigation.navigate('Settings')}
+                activeOpacity={0.7}
               >
-                <Text style={styles.menuIcon}>⚙️</Text>
-              </LinearGradient>
-              <Text style={styles.menuText}>Configurações</Text>
-            </TouchableOpacity>
+                <LinearGradient
+                  colors={['#757575', '#424242']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.menuIconBg}
+                >
+                  <Text style={styles.menuIcon}>⚙️</Text>
+                </LinearGradient>
+                <Text style={styles.menuText}>Configurações</Text>
+              </TouchableOpacity>
+            </Animated.View>
           </View>
         </View>
 
-        {/* Ações rápidas */}
+        {/* Quick actions */}
         <View style={styles.quickActionsContainer}>
           <Text style={styles.sectionTitle}>Ações Rápidas</Text>
           
-          <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={() => navigation.navigate('AddProduct')}
-          >
-            <LinearGradient
-              colors={[COLORS.success, COLORS.successLight]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.actionGradient}
+          <Animated.View style={{
+            opacity: fadeAnim,
+            transform: [
+              { translateY: fadeAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [10, 0],
+              })}
+            ]
+          }}>
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.elevatedCard]}
+              onPress={() => navigation.navigate('AddProduct')}
+              activeOpacity={0.7}
             >
-              <View style={styles.actionIconContainer}>
-                <Text style={styles.actionIcon}>📦</Text>
-              </View>
-              <View style={styles.actionTextContainer}>
-                <Text style={styles.actionTitle}>Registrar Nova Entrada</Text>
-                <Text style={styles.actionDescription}>Adicione novos produtos ao estoque</Text>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
+              <LinearGradient
+                colors={[COLORS.success, COLORS.successLight]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.actionGradient}
+              >
+                <View style={styles.actionIconContainer}>
+                  <Text style={styles.actionIcon}>📦</Text>
+                </View>
+                <View style={styles.actionTextContainer}>
+                  <Text style={styles.actionTitle}>Registrar Nova Entrada</Text>
+                  <Text style={styles.actionDescription}>Adicione novos produtos ao estoque</Text>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          </Animated.View>
           
-          <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={async () => {
-              try {
-                const result = await sincronizarDados();
-                if (result.sucesso) {
-                  Alert.alert("Sincronização", result.mensagem);
-                  // Recarregar dados após sincronização bem-sucedida
-                  const jsonValue = await AsyncStorage.getItem('produtos');
-                  if (jsonValue != null) {
-                    const products = JSON.parse(jsonValue);
-                    setTotalProducts(products.length);
-                    setLowStockCount(products.filter((p: Product) => p.quantidade < 5).length);
-                    setTotalItems(products.reduce((sum: number, p: Product) => sum + p.quantidade, 0));
-                    setLastUpdate(new Date().toLocaleTimeString());
+          <Animated.View style={{
+            opacity: fadeAnim,
+            transform: [
+              { translateY: fadeAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [20, 0],
+              })}
+            ]
+          }}>
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.elevatedCard]}
+              onPress={async () => {
+                try {
+                  const result = await sincronizarDados();
+                  if (result.sucesso) {
+                    Alert.alert("Sincronização", result.mensagem);
+                    // Reload data after successful sync
+                    const jsonValue = await AsyncStorage.getItem('produtos');
+                    if (jsonValue != null) {
+                      const products = JSON.parse(jsonValue);
+                      setTotalProducts(products.length);
+                      setLowStockCount(products.filter((p: Product) => p.quantidade < 5).length);
+                      setTotalItems(products.reduce((sum: number, p: Product) => sum + p.quantidade, 0));
+                      setLastUpdate(new Date().toLocaleTimeString());
+                    }
+                  } else {
+                    Alert.alert("Erro na sincronização", result.mensagem);
                   }
-                } else {
-                  Alert.alert("Erro na sincronização", result.mensagem);
+                } catch (error) {
+                  const errorMessage = error instanceof Error ? error.message : String(error);
+                  Alert.alert("Erro", `Falha ao sincronizar: ${errorMessage}`);
                 }
-              } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : String(error);
-                Alert.alert("Erro", `Falha ao sincronizar: ${errorMessage}`);
-              }
-            }}
-          >
-            <LinearGradient
-              colors={[COLORS.info, COLORS.infoLight]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.actionGradient}
+              }}
+              activeOpacity={0.7}
             >
-              <View style={styles.actionIconContainer}>
-                <Text style={styles.actionIcon}>🔄</Text>
-              </View>
-              <View style={styles.actionTextContainer}>
-                <Text style={styles.actionTitle}>Sincronizar com Servidor</Text>
-                <Text style={styles.actionDescription}>Atualize dados com o banco PostgreSQL</Text>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
+              <LinearGradient
+                colors={[COLORS.info, COLORS.infoLight]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.actionGradient}
+              >
+                <View style={styles.actionIconContainer}>
+                  <Text style={styles.actionIcon}>🔄</Text>
+                </View>
+                <View style={styles.actionTextContainer}>
+                  <Text style={styles.actionTitle}>Sincronizar com Servidor</Text>
+                  <Text style={styles.actionDescription}>Atualize dados com o banco PostgreSQL</Text>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          </Animated.View>
           
-          <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={() => navigation.navigate('Settings')}
-          >
-            <LinearGradient
-              colors={[COLORS.accent, COLORS.accentLight]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.actionGradient}
+          <Animated.View style={{
+            opacity: fadeAnim,
+            transform: [
+              { translateY: fadeAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [30, 0],
+              })}
+            ]
+          }}>
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.elevatedCard]}
+              onPress={() => navigation.navigate('Settings')}
+              activeOpacity={0.7}
             >
-              <View style={styles.actionIconContainer}>
-                <Text style={styles.actionIcon}>⚙️</Text>
-              </View>
-              <View style={styles.actionTextContainer}>
-                <Text style={styles.actionTitle}>Configurações</Text>
-                <Text style={styles.actionDescription}>Personalize o aplicativo</Text>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
+              <LinearGradient
+                colors={[COLORS.accent, COLORS.accentLight]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.actionGradient}
+              >
+                <View style={styles.actionIconContainer}>
+                  <Text style={styles.actionIcon}>⚙️</Text>
+                </View>
+                <View style={styles.actionTextContainer}>
+                  <Text style={styles.actionTitle}>Configurações</Text>
+                  <Text style={styles.actionDescription}>Personalize o aplicativo</Text>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          </Animated.View>
         </View>
 
         <View style={styles.footer}>
@@ -528,6 +652,23 @@ const styles = StyleSheet.create({
   },
   headerGradient: {
     width: '100%',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    paddingBottom: 10,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  connectionContainer: {
+    marginTop: -5,
   },
   scrollContainer: {
     flexGrow: 1,
@@ -535,19 +676,25 @@ const styles = StyleSheet.create({
   },
   welcomeCardContainer: {
     marginHorizontal: 15,
-    marginTop: 15,
-    marginBottom: 15,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 15,
-    elevation: 8,
+    marginTop: 20,
+    marginBottom: 20,
+    borderRadius: 20,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.2,
+        shadowRadius: 15,
+      },
+      android: {
+        elevation: 10,
+      },
+    }),
     overflow: 'hidden',
   },
   welcomeCard: {
     padding: 20,
-    borderRadius: 16,
+    borderRadius: 20,
     flexDirection: 'row',
     overflow: 'hidden',
   },
@@ -577,13 +724,13 @@ const styles = StyleSheet.create({
     right: 20,
   },
   welcomeTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
     color: COLORS.white,
-    marginBottom: 5,
+    marginBottom: 8,
   },
   welcomeText: {
-    fontSize: 14,
+    fontSize: 15,
     color: COLORS.white,
     opacity: 0.9,
   },
@@ -606,6 +753,7 @@ const styles = StyleSheet.create({
   updateText: {
     fontSize: 12,
     color: COLORS.grey,
+    fontStyle: 'italic',
   },
   cardsContainer: {
     flexDirection: 'row',
@@ -614,12 +762,20 @@ const styles = StyleSheet.create({
   cardWrapper: {
     width: cardWidth,
     borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
     overflow: 'hidden',
+  },
+  elevatedCard: {
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 5,
+      },
+    }),
   },
   card: {
     height: 120,
@@ -652,7 +808,7 @@ const styles = StyleSheet.create({
   },
   menuSection: {
     padding: 15,
-    marginBottom: 15,
+    marginBottom: 20,
   },
   menuGrid: {
     flexDirection: 'row',
@@ -661,17 +817,12 @@ const styles = StyleSheet.create({
     marginTop: 15,
   },
   menuItem: {
-    width: '48%',
+    width: (windowWidth - 45) / 2,
     backgroundColor: COLORS.white,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 15,
     alignItems: 'center',
     marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 4,
   },
   menuIconBg: {
     width: 60,
@@ -686,9 +837,9 @@ const styles = StyleSheet.create({
     color: COLORS.white,
   },
   menuText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '500',
-    marginTop: 5,
+    marginTop: 10,
     color: COLORS.black,
   },
   quickActionsContainer: {
@@ -698,16 +849,11 @@ const styles = StyleSheet.create({
   actionButton: {
     marginTop: 15,
     borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 4,
     overflow: 'hidden',
   },
   actionGradient: {
     flexDirection: 'row',
-    padding: 15,
+    padding: 18,
     alignItems: 'center',
   },
   actionIconContainer: {
@@ -727,14 +873,14 @@ const styles = StyleSheet.create({
   },
   actionTitle: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
     color: COLORS.white,
   },
   actionDescription: {
-    fontSize: 12,
+    fontSize: 13,
     color: COLORS.white,
     opacity: 0.9,
-    marginTop: 3,
+    marginTop: 4,
   },
   loader: {
     marginVertical: 20,

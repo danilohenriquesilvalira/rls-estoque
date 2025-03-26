@@ -5,9 +5,9 @@
     "owner": "danilotoic",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/Logo_RLS.png",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/Logo_RLS.png",
       "resizeMode": "contain",
       "backgroundColor": "#1565C0"
     },
@@ -23,7 +23,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/Logo_RLS.png",
         "backgroundColor": "#1565C0"
       },
       "package": "com.rlsautomacao.estoque",

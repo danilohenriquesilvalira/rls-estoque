@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -10,18 +10,23 @@ import {
   Alert,
   RefreshControl,
   Platform,
-  StatusBar
+  StatusBar,
+  Animated,
+  Dimensions,
+  Easing
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { LinearGradient } from 'expo-linear-gradient';
 import { getProdutos, verificarConexao, getStatusConexao } from '../services/api';
 import Header from '../components/Header';
+import FloatingActionButton from '../components/FloatingActionButton';
 
-// Definição do tipo para as propriedades de navegação
+// Definition of navigation props type
 type ProductListScreenProps = {
   navigation: NativeStackNavigationProp<any, 'ProductList'>;
 };
 
-// Interface para o produto (formato da API)
+// Interface for product (API format)
 interface Produto {
   id?: number;
   codigo: string;
@@ -36,7 +41,7 @@ interface Produto {
   data_atualizacao?: string;
 }
 
-// Definir cores do tema
+// Define theme colors
 const COLORS = {
   primary: '#1565C0',
   primaryDark: '#0D47A1',
@@ -54,6 +59,9 @@ const COLORS = {
   background: '#F7F9FD',
 };
 
+// Window dimensions
+const windowWidth = Dimensions.get('window').width;
+
 export default function ProductListScreen({ navigation }: ProductListScreenProps) {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [filteredProdutos, setFilteredProdutos] = useState<Produto[]>([]);
@@ -63,8 +71,13 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
   const [sortOrder, setSortOrder] = useState<'nome' | 'codigo' | 'quantidade'>('nome');
   const [sortAscending, setSortAscending] = useState(true);
   const [isOnline, setIsOnline] = useState(getStatusConexao());
+  
+  // Animation references
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const searchBarAnim = useRef(new Animated.Value(0)).current;
+  const listItemAnims = useRef<Animated.Value[]>([]).current;
 
-  // Verificar conexão com o servidor
+  // Check connection to server
   useEffect(() => {
     const checkConnection = async () => {
       const connected = await verificarConexao();
@@ -74,21 +87,58 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
     checkConnection();
   }, []);
 
-  // Função para carregar produtos
+  // Function to load products
   const loadProdutos = async () => {
     try {
       setLoading(true);
       
-      // Usar a função de API para buscar produtos
+      // Use API function to fetch products
       const produtosData = await getProdutos();
       setProdutos(produtosData);
+      
+      // Create animation values for each product
+      if (listItemAnims.length !== produtosData.length) {
+        listItemAnims.length = 0;
+        produtosData.forEach(() => {
+          listItemAnims.push(new Animated.Value(0));
+        });
+      }
+      
       applyFiltersAndSorts(produtosData, searchText, sortOrder, sortAscending);
       
-      // Verificar novamente o status da conexão
+      // Check connection status again
       const connected = await verificarConexao();
       setIsOnline(connected);
+      
+      // Animate elements when data is loaded
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.ease),
+        }),
+        Animated.timing(searchBarAnim, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.back(1.5)),
+        }),
+        Animated.stagger(
+          50,
+          listItemAnims.map(anim => 
+            Animated.spring(anim, {
+              toValue: 1,
+              friction: 8,
+              tension: 40,
+              useNativeDriver: true,
+            })
+          )
+        )
+      ]).start();
+      
     } catch (e) {
-      console.error("Erro ao carregar produtos", e);
+      console.error("Error loading products", e);
       Alert.alert("Erro", "Não foi possível carregar a lista de produtos");
     } finally {
       setLoading(false);
@@ -96,14 +146,14 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
     }
   };
 
-  // Aplicar filtros e ordenação à lista de produtos
+  // Apply filters and sorting to product list
   const applyFiltersAndSorts = (
     produtosList: Produto[], 
     search: string, 
     order: 'nome' | 'codigo' | 'quantidade', 
     ascending: boolean
   ) => {
-    // Primeiro aplicar a pesquisa
+    // First apply search
     let result = produtosList;
     
     if (search.trim() !== '') {
@@ -116,7 +166,7 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
       );
     }
     
-    // Depois aplicar a ordenação
+    // Then apply sorting
     result = [...result].sort((a, b) => {
       if (order === 'nome') {
         return ascending 
@@ -136,7 +186,7 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
     setFilteredProdutos(result);
   };
 
-  // Efeito para carregar produtos ao montar o componente
+  // Effect to load products when component mounts
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       loadProdutos();
@@ -145,55 +195,65 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
     return unsubscribe;
   }, [navigation]);
 
-  // Efeito para aplicar filtros quando os critérios mudarem
+  // Effect to apply filters when criteria change
   useEffect(() => {
     applyFiltersAndSorts(produtos, searchText, sortOrder, sortAscending);
   }, [searchText, sortOrder, sortAscending]);
 
-  // Função para atualizar a ordem de classificação
+  // Function to update sort order
   const updateSortOrder = (order: 'nome' | 'codigo' | 'quantidade') => {
     if (sortOrder === order) {
-      // Se já está ordenando por este campo, inverte a direção
+      // If already sorting by this field, reverse direction
       setSortAscending(!sortAscending);
     } else {
-      // Muda para o novo campo e começa ascendente
+      // Change to new field and start ascending
       setSortOrder(order);
       setSortAscending(true);
     }
   };
 
-  // Função para exibir o ícone de ordenação
+  // Function to display sort icon
   const getSortIcon = (field: 'nome' | 'codigo' | 'quantidade') => {
     if (sortOrder !== field) return '⋯';
     return sortAscending ? '↑' : '↓';
   };
 
-  // Renderizar o indicador de carregamento
+  // Render loading indicator
   if (loading && !refreshing) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
+        <LinearGradient
+          colors={[COLORS.primary, COLORS.primaryDark]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.header}
+        >
           <Header 
             title="Lista de Produtos" 
             showLogo={false} 
             showBack={true} 
             onBack={() => navigation.goBack()} 
           />
-        </View>
+        </LinearGradient>
 
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#3498db" />
+          <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={styles.loadingText}>Carregando produtos...</Text>
         </View>
       </View>
     );
   }
 
-  // Renderizar mensagem quando não há produtos
+  // Render message when there are no products
   const renderEmptyList = () => {
     if (searchText) {
       return (
-        <View style={styles.emptyContainer}>
+        <Animated.View 
+          style={[
+            styles.emptyContainer,
+            { opacity: fadeAnim }
+          ]}
+        >
           <Text style={styles.emptyText}>
             Nenhum produto encontrado para "{searchText}"
           </Text>
@@ -203,12 +263,17 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
           >
             <Text style={styles.clearButtonText}>Limpar Pesquisa</Text>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
       );
     }
     
     return (
-      <View style={styles.emptyContainer}>
+      <Animated.View 
+        style={[
+          styles.emptyContainer,
+          { opacity: fadeAnim }
+        ]}
+      >
         <Text style={styles.emptyText}>Nenhum produto cadastrado</Text>
         <TouchableOpacity
           style={styles.addButton}
@@ -216,56 +281,123 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
         >
           <Text style={styles.buttonText}>Adicionar Produto</Text>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
     );
   };
 
-  // Renderizar um item da lista
-  const renderProductItem = ({ item }: { item: Produto }) => (
-    <TouchableOpacity
-      style={styles.productItem}
-      onPress={() => navigation.navigate('ProductDetail', { product: item })}
-    >
-      <View style={styles.productInfo}>
-        <Text style={styles.productCode}>{item.codigo}</Text>
-        <Text style={styles.productName}>{item.nome}</Text>
-        {item.descricao ? (
-          <Text style={styles.productDescription} numberOfLines={1}>
-            {item.descricao}
-          </Text>
-        ) : null}
-      </View>
-      <View style={[
-        styles.quantityContainer, 
-        item.quantidade < (item.quantidade_minima || 5) ? styles.lowQuantity : 
-        item.quantidade > 20 ? styles.highQuantity : 
-        styles.normalQuantity
-      ]}>
-        <Text style={styles.quantity}>{item.quantidade}</Text>
-        <Text style={styles.quantityLabel}>unid.</Text>
-      </View>
-    </TouchableOpacity>
-  );
+  // Render a list item
+  const renderProductItem = ({ item, index }: { item: Produto, index: number }) => {
+    // Use existing animation or create a new one if needed
+    const animValue = index < listItemAnims.length 
+      ? listItemAnims[index] 
+      : new Animated.Value(1);
+      
+    return (
+      <Animated.View
+        style={{
+          opacity: animValue,
+          transform: [
+            { translateX: animValue.interpolate({
+              inputRange: [0, 1],
+              outputRange: [-50, 0],
+            })},
+            { scale: animValue.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.8, 1],
+            })}
+          ]
+        }}
+      >
+        <TouchableOpacity
+          style={styles.productItem}
+          onPress={() => navigation.navigate('ProductDetail', { product: item })}
+          activeOpacity={0.7}
+        >
+          <View style={styles.productInfo}>
+            <Text style={styles.productCode}>{item.codigo}</Text>
+            <Text style={styles.productName}>{item.nome}</Text>
+            {item.descricao ? (
+              <Text style={styles.productDescription} numberOfLines={1}>
+                {item.descricao}
+              </Text>
+            ) : null}
+          </View>
+          <View style={[
+            styles.quantityContainer, 
+            item.quantidade < (item.quantidade_minima || 5) ? styles.lowQuantity : 
+            item.quantidade > 20 ? styles.highQuantity : 
+            styles.normalQuantity
+          ]}>
+            <Text style={styles.quantity}>{item.quantidade}</Text>
+            <Text style={styles.quantityLabel}>unid.</Text>
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
+
+  // FAB actions
+  const fabActions = [
+    {
+      icon: '📦',
+      name: 'Novo Produto',
+      onPress: () => navigation.navigate('AddProduct'),
+      color: COLORS.success
+    },
+    {
+      icon: '📊',
+      name: 'Dashboard',
+      onPress: () => navigation.navigate('Dashboard'),
+      color: COLORS.info
+    },
+    {
+      icon: '🔍',
+      name: 'Escanear',
+      onPress: () => navigation.navigate('Scanner'),
+      color: COLORS.accent
+    }
+  ];
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <LinearGradient
+        colors={[COLORS.primary, COLORS.primaryDark]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
         <Header 
           title="Lista de Produtos" 
           showLogo={false} 
           showBack={true} 
           onBack={() => navigation.goBack()} 
         />
-      </View>
+      </LinearGradient>
 
       {!isOnline && (
-        <View style={styles.offlineBanner}>
+        <Animated.View 
+          style={[
+            styles.offlineBanner,
+            { opacity: fadeAnim }
+          ]}
+        >
           <Text style={styles.offlineText}>Modo Offline - Exibindo dados locais</Text>
-        </View>
+        </Animated.View>
       )}
       
-      {/* Barra de pesquisa */}
-      <View style={styles.searchContainer}>
+      {/* Search bar */}
+      <Animated.View style={[
+        styles.searchContainer,
+        {
+          opacity: searchBarAnim,
+          transform: [
+            { translateY: searchBarAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [-20, 0],
+            })}
+          ]
+        }
+      ]}>
         <View style={styles.searchInputContainer}>
           <Text style={styles.searchIcon}>🔍</Text>
           <TextInput
@@ -276,10 +408,21 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
             clearButtonMode="while-editing"
           />
         </View>
-      </View>
+      </Animated.View>
       
-      {/* Cabeçalho de ordenação */}
-      <View style={styles.sortHeader}>
+      {/* Sorting header */}
+      <Animated.View style={[
+        styles.sortHeader,
+        {
+          opacity: searchBarAnim,
+          transform: [
+            { translateY: searchBarAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [-20, 0],
+            })}
+          ]
+        }
+      ]}>
         <TouchableOpacity 
           style={styles.sortButton} 
           onPress={() => updateSortOrder('codigo')}
@@ -315,20 +458,25 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
             Qtd {getSortIcon('quantidade')}
           </Text>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
 
-      {/* Lista de produtos */}
+      {/* Products list */}
       <FlatList
         data={filteredProdutos}
         keyExtractor={(item) => item.codigo}
         renderItem={renderProductItem}
         ListEmptyComponent={renderEmptyList}
-        contentContainerStyle={filteredProdutos.length === 0 ? { flex: 1 } : { paddingBottom: 80 }}
+        contentContainerStyle={[
+          filteredProdutos.length === 0 ? { flex: 1 } : { paddingBottom: 80 },
+          styles.listContainer
+        ]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => {
               setRefreshing(true);
+              // Reset animations for refresh effect
+              listItemAnims.forEach(anim => anim.setValue(0));
               loadProdutos();
             }}
             colors={[COLORS.primary]}
@@ -337,13 +485,12 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
         }
       />
 
-      {/* Botão flutuante para adicionar */}
-      <TouchableOpacity
-        style={styles.floatingButton}
-        onPress={() => navigation.navigate('AddProduct')}
-      >
-        <Text style={styles.floatingButtonText}>+</Text>
-      </TouchableOpacity>
+      {/* Floating action button */}
+      <FloatingActionButton
+        actions={fabActions}
+        mainButtonColor={COLORS.primary}
+        mainButtonIcon="+"
+      />
     </View>
   );
 }
@@ -354,7 +501,19 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   header: {
-    backgroundColor: COLORS.primary,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.black,
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 5,
+      },
+    }),
   },
   centerContainer: {
     flex: 1,
@@ -363,7 +522,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   loadingText: {
-    marginTop: 10,
+    marginTop: 16,
     fontSize: 16,
     color: COLORS.grey,
   },
@@ -371,7 +530,18 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     padding: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.black,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   searchInputContainer: {
     flexDirection: 'row',
@@ -380,6 +550,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
   },
   searchIcon: {
     fontSize: 16,
@@ -397,7 +569,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     padding: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: 'rgba(0,0,0,0.05)',
   },
   sortButton: {
     flex: 1,
@@ -418,18 +590,27 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontWeight: 'bold',
   },
+  listContainer: {
+    paddingTop: 10,
+  },
   productItem: {
     flexDirection: 'row',
     backgroundColor: COLORS.white,
     marginHorizontal: 15,
-    marginTop: 15,
-    padding: 15,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: 15,
+    padding: 16,
+    borderRadius: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.black,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   productInfo: {
     flex: 1,
@@ -453,7 +634,7 @@ const styles = StyleSheet.create({
   quantityContainer: {
     width: 60,
     height: 60,
-    borderRadius: 12,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 10,
@@ -498,14 +679,25 @@ const styles = StyleSheet.create({
   addButton: {
     backgroundColor: COLORS.primary,
     padding: 15,
-    borderRadius: 8,
+    borderRadius: 16,
     alignItems: 'center',
     width: '80%',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.black,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 5,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   clearButton: {
     backgroundColor: COLORS.grey,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 16,
     alignItems: 'center',
     width: '60%',
   },
@@ -518,27 +710,6 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 14,
     fontWeight: '500',
-  },
-  floatingButton: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: COLORS.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-  },
-  floatingButtonText: {
-    fontSize: 30,
-    color: COLORS.white,
-    fontWeight: 'bold',
   },
   offlineBanner: {
     backgroundColor: COLORS.error,

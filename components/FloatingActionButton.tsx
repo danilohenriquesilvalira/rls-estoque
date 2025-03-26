@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -6,9 +6,10 @@ import {
   TouchableOpacity,
   Animated,
   Dimensions,
+  Platform,
 } from 'react-native';
 
-// Definir cores do tema
+// Define theme colors
 const COLORS = {
   primary: '#1565C0',
   primaryDark: '#0D47A1',
@@ -32,21 +33,59 @@ interface ActionItem {
 interface FloatingActionButtonProps {
   actions: ActionItem[];
   onMainButtonPress?: () => void;
+  position?: 'bottomRight' | 'bottomLeft';
+  mainButtonColor?: string;
+  mainButtonIcon?: string;
 }
 
 const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
   actions,
   onMainButtonPress,
+  position = 'bottomRight',
+  mainButtonColor = COLORS.primary,
+  mainButtonIcon = '+',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const animation = useRef(new Animated.Value(0)).current;
+  const scaleAnimation = useRef(new Animated.Value(1)).current;
+  
+  // Add pulse animation when the component mounts
+  useEffect(() => {
+    const pulseAnimation = Animated.sequence([
+      Animated.timing(scaleAnimation, {
+        toValue: 1.15,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnimation, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]);
+    
+    // Pulse twice when component mounts
+    Animated.sequence([
+      pulseAnimation,
+      Animated.delay(300),
+      pulseAnimation,
+    ]).start();
+  }, []);
   
   const toggleMenu = () => {
     const toValue = isOpen ? 0 : 1;
     
+    // Add scale animation when toggling
+    Animated.timing(scaleAnimation, {
+      toValue: isOpen ? 1 : 1.1,
+      duration: 150,
+      useNativeDriver: true,
+    }).start();
+    
     Animated.spring(animation, {
       toValue,
       friction: 6,
+      tension: 80,
       useNativeDriver: true,
     }).start();
     
@@ -66,10 +105,15 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
     inputRange: [0, 1],
     outputRange: [0, 0.5],
   });
+  
+  const mainButtonRotation = animation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '45deg'],
+  });
 
   return (
     <>
-      {/* Backdrop semi-transparente */}
+      {/* Semi-transparent backdrop */}
       {isOpen && (
         <Animated.View
           style={[
@@ -81,12 +125,17 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
         />
       )}
       
-      <View style={styles.container}>
-        {/* Botões de ação */}
+      <View style={[styles.container, position === 'bottomLeft' ? styles.bottomLeft : styles.bottomRight]}>
+        {/* Action buttons */}
         {actions.map((action, index) => {
           const translateY = animation.interpolate({
             inputRange: [0, 1],
-            outputRange: [100, -10 - 60 * (actions.length - index)],
+            outputRange: [100, -10 - 65 * (actions.length - index)],
+          });
+          
+          const scale = animation.interpolate({
+            inputRange: [0, 0.7, 1],
+            outputRange: [0.5, 1.1, 1],
           });
           
           return (
@@ -95,7 +144,10 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
               style={[
                 styles.actionButton,
                 {
-                  transform: [{ translateY }],
+                  transform: [
+                    { translateY },
+                    { scale }
+                  ],
                   opacity,
                 }
               ]}
@@ -125,33 +177,35 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
           );
         })}
         
-        {/* Botão principal */}
-        <TouchableOpacity
-          style={[
-            styles.mainButton,
-            isOpen ? styles.mainButtonOpen : null
-          ]}
-          onPress={toggleMenu}
-          activeOpacity={0.7}
-        >
-          <Animated.Text
+        {/* Main button */}
+        <Animated.View style={[
+          styles.mainButtonContainer,
+          { transform: [{ scale: scaleAnimation }] }
+        ]}>
+          <TouchableOpacity
             style={[
-              styles.mainButtonIcon,
-              {
-                transform: [
-                  {
-                    rotate: animation.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['0deg', '45deg'],
-                    }),
-                  },
-                ],
-              },
+              styles.mainButton,
+              { backgroundColor: isOpen ? COLORS.error : mainButtonColor },
+              isOpen ? styles.mainButtonOpen : null,
+              Platform.OS === 'ios' ? styles.iosShadow : styles.androidShadow
             ]}
+            onPress={toggleMenu}
+            activeOpacity={0.8}
           >
-            +
-          </Animated.Text>
-        </TouchableOpacity>
+            <Animated.Text
+              style={[
+                styles.mainButtonIcon,
+                {
+                  transform: [
+                    { rotate: mainButtonRotation },
+                  ],
+                },
+              ]}
+            >
+              {mainButtonIcon}
+            </Animated.Text>
+          </TouchableOpacity>
+        </Animated.View>
       </View>
     </>
   );
@@ -161,9 +215,14 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     bottom: 30,
-    right: 30,
     alignItems: 'center',
     zIndex: 10,
+  },
+  bottomRight: {
+    right: 30,
+  },
+  bottomLeft: {
+    left: 30,
   },
   backdrop: {
     position: 'absolute',
@@ -174,26 +233,33 @@ const styles = StyleSheet.create({
     backgroundColor: 'black',
     zIndex: 9,
   },
+  mainButtonContainer: {
+    zIndex: 10,
+  },
   mainButton: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 10,
+  },
+  iosShadow: {
     shadowColor: COLORS.black,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 5,
-    zIndex: 10,
+    shadowRadius: 8,
+  },
+  androidShadow: {
+    elevation: 8,
   },
   mainButtonOpen: {
-    backgroundColor: COLORS.error,
+    // Additional styles for when the menu is open
   },
   mainButtonIcon: {
     fontSize: 30,
     color: COLORS.white,
+    fontWeight: 'bold',
   },
   actionButton: {
     position: 'absolute',
@@ -204,16 +270,16 @@ const styles = StyleSheet.create({
     zIndex: 9,
   },
   actionButtonTouchable: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: COLORS.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 3,
-    elevation: 3,
+    elevation: 5,
   },
   actionButtonIcon: {
     fontSize: 20,
@@ -223,18 +289,19 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 65,
     backgroundColor: COLORS.white,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
     shadowColor: COLORS.black,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 2,
-    elevation: 2,
+    elevation: 3,
   },
   actionButtonLabelText: {
     color: COLORS.black,
     fontSize: 14,
+    fontWeight: '500',
   },
 });
 

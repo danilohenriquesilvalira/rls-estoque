@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -10,20 +10,24 @@ import {
   ActivityIndicator,
   Modal,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Animated,
+  Easing,
+  Dimensions
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { getProduto, atualizarProduto, deletarProduto, criarMovimentacao, getMovimentacoesPorProduto } from '../services/api';
 import Header from '../components/Header';
 
-// Definição dos tipos para navegação e rota
+// Types for navigation and route
 type ProductDetailScreenProps = {
   navigation: NativeStackNavigationProp<any, 'ProductDetail'>;
   route: RouteProp<{ ProductDetail: { product: any } }, 'ProductDetail'>;
 };
 
-// Interface para o produto
+// Interface for product
 interface Produto {
   id?: number;
   codigo: string;
@@ -38,7 +42,7 @@ interface Produto {
   data_atualizacao?: string;
 }
 
-// Interface para registro de movimento
+// Interface for movement record
 interface Movimentacao {
   id?: number;
   produto_id: number;
@@ -50,7 +54,7 @@ interface Movimentacao {
   produto_nome?: string;
 }
 
-// Definir cores do tema
+// Define theme colors
 const COLORS = {
   primary: '#1565C0',
   primaryDark: '#0D47A1',
@@ -68,9 +72,12 @@ const COLORS = {
   background: '#F7F9FD',
 };
 
+// Get screen dimensions
+const { width: screenWidth } = Dimensions.get('window');
+
 export default function ProductDetailScreen({ route, navigation }: ProductDetailScreenProps) {
-  // Normalizar o produto recebido para garantir compatibilidade
-  // Isso corrige o problema quando o produto vem do scanner (com campos diferentes)
+  // Normalize received product to ensure compatibility
+  // This fixes issues when product comes from scanner (with different fields)
   const rawProduct = route.params.product;
   const normalizedProduct: Produto = {
     id: rawProduct.id,
@@ -98,12 +105,41 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
   const [movements, setMovements] = useState<Movimentacao[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.95)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  const quantityScale = useRef(new Animated.Value(1)).current;
+  const modalAnim = useRef(new Animated.Value(0)).current;
 
-  // Carregar detalhes atualizados do produto e seu histórico
+  // Load updated product details and history
   useEffect(() => {
+    // Start entry animations
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.ease)
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.back(1.7))
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.ease)
+      })
+    ]).start();
+    
     const loadProductDetails = async () => {
       try {
-        // Verificar se temos ID do produto para buscar detalhes atualizados
+        // Check if we have product ID to fetch updated details
         if (produto.id) {
           const updatedProduct = await getProduto(produto.id);
           if (updatedProduct) {
@@ -114,10 +150,10 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
           }
         }
         
-        // Buscar movimentações
+        // Fetch movements
         loadMovements();
       } catch (error) {
-        console.error("Erro ao carregar detalhes do produto:", error);
+        console.error("Error loading product details:", error);
       }
     };
     
@@ -129,7 +165,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
     try {
       if (produto.id) {
         const movementData = await getMovimentacoesPorProduto(produto.id);
-        // Ordenar do mais recente para o mais antigo
+        // Sort from newest to oldest
         const sortedMovements = movementData.sort(
           (a, b) => new Date(b.data_movimentacao || '').getTime() - new Date(a.data_movimentacao || '').getTime()
         );
@@ -138,14 +174,14 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
         setMovements([]);
       }
     } catch (error) {
-      console.error("Erro ao carregar histórico:", error);
+      console.error("Error loading history:", error);
       Alert.alert("Erro", "Não foi possível carregar o histórico do produto");
     } finally {
       setLoadingHistory(false);
     }
   };
 
-  // Salvar alterações no produto
+  // Save product changes
   const saveChanges = async () => {
     if (!editedName.trim()) {
       Alert.alert("Erro", "O nome do produto não pode estar vazio");
@@ -162,14 +198,14 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
         quantidade: quantity
       };
       
-      // Usar a função de API para atualizar
+      // Use API function to update
       if (produto.id) {
         const result = await atualizarProduto(produto.id, updatedProduct);
         
-        // Atualizar o estado local
+        // Update local state
         setProduto(result);
         
-        // Atualizar os parâmetros de rota
+        // Update route parameters
         navigation.setParams({ product: result });
         
         Alert.alert("Sucesso", "Produto atualizado com sucesso");
@@ -186,7 +222,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
     }
   };
 
-  // Registrar movimento de estoque
+  // Register stock movement
   const registerMovement = async () => {
     const quantityNum = parseInt(movementQuantity);
     
@@ -200,13 +236,13 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
       return;
     }
 
-    // Garantir que produto_id seja um número válido
+    // Ensure product_id is a valid number
     if (!produto.id) {
       Alert.alert("Erro", "ID do produto não encontrado");
       return;
     }
 
-    // Criar registro de movimento
+    // Create movement record
     const newMovement: Movimentacao = {
       produto_id: produto.id,
       tipo: movementType,
@@ -215,17 +251,33 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
     };
 
     try {
-      // Usar a função da API para registrar movimentação
+      // Use API function to register movement
       await criarMovimentacao(newMovement);
       
-      // Atualizar a quantidade localmente
+      // Update quantity locally
       const newQuantity = movementType === 'entrada' 
         ? quantity + quantityNum 
         : quantity - quantityNum;
       
+      // Animate quantity change
+      Animated.sequence([
+        Animated.timing(quantityScale, {
+          toValue: 1.3,
+          duration: 200,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.ease)
+        }),
+        Animated.timing(quantityScale, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.back(1.5))
+        })
+      ]).start();
+      
       setQuantity(newQuantity);
       
-      // Atualizar o produto com a nova quantidade
+      // Update product with new quantity
       const updatedProduct = {
         ...produto,
         quantidade: newQuantity
@@ -234,13 +286,15 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
       setProduto(updatedProduct);
       navigation.setParams({ product: updatedProduct });
       
-      // Atualizar movimentos
+      // Update movements
       loadMovements();
       
-      // Resetar o modal
+      // Reset modal
       setMovementQuantity('1');
       setMovementNotes('');
-      setShowMovementModal(false);
+      
+      // Hide modal with animation
+      closeMovementModal();
       
       Alert.alert(
         "Sucesso", 
@@ -248,12 +302,12 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
       );
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error("Erro ao registrar movimento:", error);
+      console.error("Error registering movement:", error);
       Alert.alert("Erro", `Não foi possível registrar o movimento: ${errorMessage}`);
     }
   };
 
-  // Excluir produto
+  // Delete product
   const deleteProduct = async () => {
     Alert.alert(
       "Confirmar Exclusão",
@@ -269,7 +323,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
             try {
               setDeleting(true);
               
-              // Se o produto tem ID, tenta excluir no servidor
+              // If product has ID, try to delete on server
               if (produto.id) {
                 await deletarProduto(produto.id);
               }
@@ -298,10 +352,42 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
     );
   };
 
-  // Função para formatação de data/hora
+  // Function for date/time formatting
   const formatDateTime = (isoString: string) => {
     const date = new Date(isoString);
-    return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+    return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit'
+    })}`;
+  };
+  
+  // Open movement modal with animation
+  const openMovementModal = (type: 'entrada' | 'saida') => {
+    setMovementType(type);
+    setShowMovementModal(true);
+    
+    // Reset modal animation value
+    modalAnim.setValue(0);
+    
+    // Start modal animation
+    Animated.spring(modalAnim, {
+      toValue: 1,
+      friction: 8,
+      tension: 65,
+      useNativeDriver: true
+    }).start();
+  };
+  
+  // Close movement modal with animation
+  const closeMovementModal = () => {
+    Animated.timing(modalAnim, {
+      toValue: 0,
+      duration: 250,
+      useNativeDriver: true,
+      easing: Easing.out(Easing.ease)
+    }).start(() => {
+      setShowMovementModal(false);
+    });
   };
 
   return (
@@ -310,17 +396,33 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
       style={styles.container}
       keyboardVerticalOffset={100}
     >
-      <View style={styles.header}>
+      <LinearGradient
+        colors={[COLORS.primary, COLORS.primaryDark]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
         <Header 
           title="Detalhes do Produto" 
           showLogo={false} 
           showBack={true} 
           onBack={() => navigation.goBack()} 
         />
-      </View>
+      </LinearGradient>
       
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.card}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <Animated.View style={[
+          styles.card,
+          {
+            opacity: fadeAnim,
+            transform: [
+              { scale: scaleAnim }
+            ]
+          }
+        ]}>
           <View style={styles.headerRow}>
             <View style={styles.codeContainer}>
               <Text style={styles.codeLabel}>Código</Text>
@@ -349,7 +451,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
           </View>
           
           {isEditing ? (
-            // Modo de edição
+            // Edit mode
             <View style={styles.editContainer}>
               <Text style={styles.label}>Nome do Produto:</Text>
               <TextInput
@@ -382,7 +484,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
               </TouchableOpacity>
             </View>
           ) : (
-            // Modo de visualização
+            // View mode
             <View>
               <Text style={styles.label}>Nome:</Text>
               <Text style={styles.value}>{produto.nome}</Text>
@@ -399,17 +501,55 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
             <View style={styles.quantityControl}>
               <TouchableOpacity 
                 style={[styles.quantityButton, quantity <= 0 && styles.disabledButton]}
-                onPress={() => quantity > 0 && setQuantity(quantity - 1)}
+                onPress={() => {
+                  if (quantity > 0) {
+                    Animated.sequence([
+                      Animated.timing(quantityScale, {
+                        toValue: 0.8,
+                        duration: 150,
+                        useNativeDriver: true
+                      }),
+                      Animated.timing(quantityScale, {
+                        toValue: 1,
+                        duration: 150,
+                        useNativeDriver: true,
+                        easing: Easing.out(Easing.back(1.5))
+                      })
+                    ]).start();
+                    
+                    setQuantity(quantity - 1);
+                  }
+                }}
                 disabled={quantity <= 0}
               >
                 <Text style={styles.quantityButtonText}>-</Text>
               </TouchableOpacity>
               
-              <Text style={styles.quantityValue}>{quantity}</Text>
+              <Animated.View style={{
+                transform: [{ scale: quantityScale }]
+              }}>
+                <Text style={styles.quantityValue}>{quantity}</Text>
+              </Animated.View>
               
               <TouchableOpacity 
                 style={styles.quantityButton}
-                onPress={() => setQuantity(quantity + 1)}
+                onPress={() => {
+                  Animated.sequence([
+                    Animated.timing(quantityScale, {
+                      toValue: 0.8,
+                      duration: 150,
+                      useNativeDriver: true
+                    }),
+                    Animated.timing(quantityScale, {
+                      toValue: 1,
+                      duration: 150,
+                      useNativeDriver: true,
+                      easing: Easing.out(Easing.back(1.5))
+                    })
+                  ]).start();
+                  
+                  setQuantity(quantity + 1);
+                }}
               >
                 <Text style={styles.quantityButtonText}>+</Text>
               </TouchableOpacity>
@@ -419,10 +559,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
           <View style={styles.buttonsContainer}>
             <TouchableOpacity 
               style={[styles.actionButton, styles.entryButton]}
-              onPress={() => {
-                setMovementType('entrada');
-                setShowMovementModal(true);
-              }}
+              onPress={() => openMovementModal('entrada')}
             >
               <Text style={styles.actionButtonText}>Registrar Entrada</Text>
             </TouchableOpacity>
@@ -433,19 +570,24 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
                 styles.exitButton,
                 quantity <= 0 && styles.disabledButton
               ]}
-              onPress={() => {
-                setMovementType('saida');
-                setShowMovementModal(true);
-              }}
+              onPress={() => openMovementModal('saida')}
               disabled={quantity <= 0}
             >
               <Text style={styles.actionButtonText}>Registrar Saída</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </Animated.View>
         
-        {/* Seção de histórico */}
-        <View style={styles.historyCard}>
+        {/* History section */}
+        <Animated.View style={[
+          styles.historyCard,
+          {
+            opacity: fadeAnim,
+            transform: [
+              { translateY: slideAnim }
+            ]
+          }
+        ]}>
           <Text style={styles.historyTitle}>Histórico de Movimentações</Text>
           
           {loadingHistory ? (
@@ -456,7 +598,10 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
             </Text>
           ) : (
             movements.map((movement, index) => (
-              <View key={index} style={styles.movementItem}>
+              <View key={index} style={[
+                styles.movementItem,
+                movement.tipo === 'entrada' ? styles.entryItemBorder : styles.exitItemBorder
+              ]}>
                 <View style={styles.movementHeader}>
                   <Text style={[
                     styles.movementType,
@@ -470,7 +615,10 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
                 </View>
                 
                 <View style={styles.movementDetails}>
-                  <Text style={styles.movementQuantity}>
+                  <Text style={[
+                    styles.movementQuantity,
+                    movement.tipo === 'entrada' ? styles.entryText : styles.exitText
+                  ]}>
                     {movement.tipo === 'entrada' ? '+' : '-'}{movement.quantidade} unidades
                   </Text>
                   {movement.notas && (
@@ -482,75 +630,108 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
               </View>
             ))
           )}
-        </View>
+        </Animated.View>
         
-        <TouchableOpacity 
-          style={styles.deleteButton}
-          onPress={deleteProduct}
-          disabled={deleting}
-        >
-          {deleting ? (
-            <ActivityIndicator size="small" color="white" />
-          ) : (
-            <Text style={styles.deleteButtonText}>Excluir Produto</Text>
-          )}
-        </TouchableOpacity>
+        <Animated.View style={{
+          opacity: fadeAnim,
+          transform: [
+            { translateY: slideAnim }
+          ]
+        }}>
+          <TouchableOpacity 
+            style={styles.deleteButton}
+            onPress={deleteProduct}
+            disabled={deleting}
+          >
+            {deleting ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <Text style={styles.deleteButtonText}>Excluir Produto</Text>
+            )}
+          </TouchableOpacity>
+        </Animated.View>
       </ScrollView>
       
-      {/* Modal de registro de movimento */}
+      {/* Movement registration modal */}
       <Modal
         visible={showMovementModal}
         transparent={true}
-        animationType="slide"
+        animationType="none"
+        onRequestClose={closeMovementModal}
       >
         <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>
-              {movementType === 'entrada' ? 'Registrar Entrada' : 'Registrar Saída'}
-            </Text>
+          <Animated.View 
+            style={[
+              styles.modalContent,
+              {
+                opacity: modalAnim,
+                transform: [
+                  { scale: modalAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.8, 1]
+                  }) },
+                  { translateY: modalAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [100, 0]
+                  }) }
+                ]
+              }
+            ]}
+          >
+            <LinearGradient
+              colors={movementType === 'entrada' ? 
+                ['#43A047', '#2E7D32'] : 
+                ['#E53935', '#C62828']
+              }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.modalHeader}
+            >
+              <Text style={styles.modalTitle}>
+                {movementType === 'entrada' ? 'Registrar Entrada' : 'Registrar Saída'}
+              </Text>
+            </LinearGradient>
             
-            <Text style={styles.modalLabel}>Quantidade:</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={movementQuantity}
-              onChangeText={setMovementQuantity}
-              keyboardType="numeric"
-              placeholder="Quantidade"
-            />
-            
-            <Text style={styles.modalLabel}>Observações (opcional):</Text>
-            <TextInput
-              style={[styles.modalInput, styles.modalTextArea]}
-              value={movementNotes}
-              onChangeText={setMovementNotes}
-              placeholder="Observações sobre esta movimentação"
-              multiline
-              numberOfLines={3}
-            />
-            
-            <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={styles.modalCancelButton}
-                onPress={() => {
-                  setShowMovementModal(false);
-                  setMovementQuantity('1');
-                  setMovementNotes('');
-                }}
-              >
-                <Text style={styles.modalCancelButtonText}>Cancelar</Text>
-              </TouchableOpacity>
+            <View style={styles.modalBody}>
+              <Text style={styles.modalLabel}>Quantidade:</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={movementQuantity}
+                onChangeText={setMovementQuantity}
+                keyboardType="numeric"
+                placeholder="Quantidade"
+              />
               
-              <TouchableOpacity 
-                style={[
-                  styles.modalConfirmButton,
-                  movementType === 'entrada' ? styles.entryButton : styles.exitButton
-                ]}
-                onPress={registerMovement}
-              >
-                <Text style={styles.modalConfirmButtonText}>Confirmar</Text>
-              </TouchableOpacity>
+              <Text style={styles.modalLabel}>Observações (opcional):</Text>
+              <TextInput
+                style={[styles.modalInput, styles.modalTextArea]}
+                value={movementNotes}
+                onChangeText={setMovementNotes}
+                placeholder="Observações sobre esta movimentação"
+                multiline
+                numberOfLines={3}
+              />
+              
+              <View style={styles.modalButtons}>
+                <TouchableOpacity 
+                  style={styles.modalCancelButton}
+                  onPress={closeMovementModal}
+                >
+                  <Text style={styles.modalCancelButtonText}>Cancelar</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[
+                    styles.modalConfirmButton,
+                    movementType === 'entrada' ? styles.entryButton : styles.exitButton
+                  ]}
+                  onPress={registerMovement}
+                >
+                  <Text style={styles.modalConfirmButtonText}>Confirmar</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
     </KeyboardAvoidingView>
@@ -563,22 +744,40 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   header: {
-    backgroundColor: COLORS.primary,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.black,
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 5,
+      },
+    }),
   },
   scrollContent: {
-    padding: 15,
+    padding: 16,
     paddingBottom: 30,
   },
   card: {
     backgroundColor: COLORS.white,
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 15,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.black,
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   headerRow: {
     flexDirection: 'row',
@@ -638,7 +837,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     padding: 15,
     backgroundColor: COLORS.ultraLightGrey,
-    borderRadius: 12,
+    borderRadius: 16,
   },
   stockTitle: {
     fontSize: 16,
@@ -659,11 +858,17 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.black,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
   },
   disabledButton: {
     backgroundColor: COLORS.lightGrey,
@@ -692,11 +897,17 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     alignItems: 'center',
     marginHorizontal: 5,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.black,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
   },
   entryButton: {
     backgroundColor: COLORS.success,
@@ -715,18 +926,24 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     alignItems: 'center',
     marginVertical: 10,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.black,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
   },
   deleteButtonText: {
     color: COLORS.white,
     fontSize: 16,
     fontWeight: 'bold',
   },
-  // Estilos para o modo de edição
+  // Styles for edit mode
   editContainer: {
     marginTop: 10,
   },
@@ -750,28 +967,40 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     alignItems: 'center',
     marginTop: 10,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.black,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
   },
   saveButtonText: {
     color: COLORS.white,
     fontSize: 16,
     fontWeight: 'bold',
   },
-  // Estilos para o histórico
+  // Styles for history
   historyCard: {
     backgroundColor: COLORS.white,
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 15,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.black,
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   historyTitle: {
     fontSize: 18,
@@ -791,20 +1020,25 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   movementItem: {
-    borderLeftWidth: 3,
-    paddingLeft: 12,
-    paddingVertical: 10,
-    marginBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.lightGrey,
+    borderLeftWidth: 4,
+    paddingLeft: 14,
+    paddingVertical: 12,
+    paddingRight: 8,
+    marginBottom: 16,
+    backgroundColor: COLORS.ultraLightGrey,
+    borderRadius: 10,
+  },
+  entryItemBorder: {
+    borderLeftColor: COLORS.success,
+  },
+  exitItemBorder: {
+    borderLeftColor: COLORS.error,
   },
   entryText: {
     color: COLORS.success,
-    borderLeftColor: COLORS.success,
   },
   exitText: {
     color: COLORS.error,
-    borderLeftColor: COLORS.error,
   },
   movementHeader: {
     flexDirection: 'row',
@@ -832,7 +1066,7 @@ const styles = StyleSheet.create({
     marginTop: 5,
     fontStyle: 'italic',
   },
-  // Estilos para o modal
+  // Styles for modal
   modalContainer: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -842,25 +1076,38 @@ const styles = StyleSheet.create({
   modalContent: {
     backgroundColor: COLORS.white,
     borderRadius: 20,
-    padding: 20,
-    width: '90%',
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    width: '85%',
+    maxWidth: 400,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.black,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  modalHeader: {
+    padding: 16,
+    alignItems: 'center',
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-    color: COLORS.black,
+    color: COLORS.white,
+  },
+  modalBody: {
+    padding: 20,
   },
   modalLabel: {
     fontSize: 16,
-    marginBottom: 5,
+    marginBottom: 8,
     color: COLORS.black,
+    fontWeight: '500',
   },
   modalInput: {
     backgroundColor: COLORS.ultraLightGrey,
@@ -869,7 +1116,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     borderWidth: 1,
     borderColor: COLORS.lightGrey,
-    marginBottom: 15,
+    marginBottom: 16,
   },
   modalTextArea: {
     minHeight: 80,
@@ -883,14 +1130,14 @@ const styles = StyleSheet.create({
   modalCancelButton: {
     flex: 1,
     backgroundColor: COLORS.grey,
-    padding: 12,
+    padding: 14,
     borderRadius: 25,
     alignItems: 'center',
     marginRight: 10,
   },
   modalConfirmButton: {
-    flex: 1,
-    padding: 12,
+    flex: 1.5,
+    padding: 14,
     borderRadius: 25,
     alignItems: 'center',
   },
@@ -902,6 +1149,6 @@ const styles = StyleSheet.create({
   modalConfirmButtonText: {
     color: COLORS.white,
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
   },
 });

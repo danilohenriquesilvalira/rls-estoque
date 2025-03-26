@@ -1,19 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, 
   Text, 
   StyleSheet, 
   TouchableOpacity, 
   ActivityIndicator,
-  Animated
+  Animated,
+  Platform,
+  Easing
 } from 'react-native';
 import { getStatusConexao, verificarConexao, sincronizarDados } from '../services/api';
+import { LinearGradient } from 'expo-linear-gradient';
 
 interface ConnectionStatusProps {
   onConfigPress?: () => void;
 }
 
-// Definir cores
+// Define colors
 const COLORS = {
   primary: '#1565C0',
   primaryDark: '#0D47A1',
@@ -39,12 +42,25 @@ const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ onConfigPress }) =>
   const [isPulsing, setIsPulsing] = useState(false);
   const [isResultVisible, setIsResultVisible] = useState(false);
 
-  // Animações
-  const pulseAnim = React.useRef(new Animated.Value(1)).current;
-  const resultOpacity = React.useRef(new Animated.Value(0)).current;
+  // Animations
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const resultOpacity = useRef(new Animated.Value(0)).current;
+  const statusBarWidth = useRef(new Animated.Value(0)).current;
+  const syncButtonScale = useRef(new Animated.Value(1)).current;
+  const syncButtonOpacity = useRef(new Animated.Value(1)).current;
+  
+  // Initial appear animation
+  useEffect(() => {
+    Animated.spring(statusBarWidth, {
+      toValue: 1,
+      friction: 8,
+      tension: 40,
+      useNativeDriver: false, // We're animating width which requires non-native
+    }).start();
+  }, []);
 
   useEffect(() => {
-    // Verificar conexão quando o componente montar
+    // Check connection when component mounts
     const checkConnection = async () => {
       const connected = await verificarConexao();
       setIsConnected(connected);
@@ -52,14 +68,14 @@ const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ onConfigPress }) =>
     
     checkConnection();
     
-    // Verificar conexão a cada 30 segundos
+    // Check connection every 30 seconds
     const intervalId = setInterval(checkConnection, 30000);
     
     return () => clearInterval(intervalId);
   }, []);
 
   useEffect(() => {
-    // Mostrar e ocultar resultado com animação
+    // Show and hide result with animation
     if (syncResult) {
       setIsResultVisible(true);
       
@@ -67,13 +83,15 @@ const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ onConfigPress }) =>
         Animated.timing(resultOpacity, {
           toValue: 1,
           duration: 300,
-          useNativeDriver: true
+          useNativeDriver: true,
+          easing: Easing.out(Easing.ease),
         }),
         Animated.delay(2500),
         Animated.timing(resultOpacity, {
           toValue: 0,
           duration: 300,
-          useNativeDriver: true
+          useNativeDriver: true,
+          easing: Easing.in(Easing.ease),
         })
       ]).start(() => {
         setIsResultVisible(false);
@@ -82,7 +100,7 @@ const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ onConfigPress }) =>
     }
   }, [syncResult, resultOpacity]);
 
-  // Animar o indicador de status
+  // Animate the status indicator
   useEffect(() => {
     if (isPulsing) {
       Animated.loop(
@@ -91,11 +109,13 @@ const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ onConfigPress }) =>
             toValue: 1.2,
             duration: 500,
             useNativeDriver: true,
+            easing: Easing.inOut(Easing.ease),
           }),
           Animated.timing(pulseAnim, {
             toValue: 1,
             duration: 500,
             useNativeDriver: true,
+            easing: Easing.inOut(Easing.ease),
           })
         ])
       ).start();
@@ -104,6 +124,7 @@ const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ onConfigPress }) =>
         toValue: 1,
         duration: 300,
         useNativeDriver: true,
+        easing: Easing.out(Easing.ease),
       }).start();
     }
   }, [isPulsing, pulseAnim]);
@@ -111,12 +132,28 @@ const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ onConfigPress }) =>
   const handleSync = async () => {
     if (isSyncing) return;
     
+    // Button press animation
+    Animated.sequence([
+      Animated.timing(syncButtonScale, {
+        toValue: 0.9,
+        duration: 100,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.ease),
+      }),
+      Animated.timing(syncButtonScale, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.back(2)),
+      })
+    ]).start();
+    
     try {
       setIsSyncing(true);
       setIsPulsing(true);
       setSyncResult(null);
       
-      // Verificar conexão primeiro
+      // Check connection first
       const connected = await verificarConexao();
       setIsConnected(connected);
       
@@ -125,7 +162,7 @@ const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ onConfigPress }) =>
         return;
       }
       
-      // Tentar sincronizar
+      // Try to sync
       const result = await sincronizarDados();
       
       if (result.sucesso) {
@@ -148,52 +185,78 @@ const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ onConfigPress }) =>
 
   return (
     <View style={styles.container}>
-      <View style={styles.statusContainer}>
-        <Animated.View 
+      <Animated.View style={[
+        styles.statusContainer,
+        { 
+          width: statusBarWidth.interpolate({
+            inputRange: [0, 1],
+            outputRange: ['50%', '100%']
+          }),
+          opacity: statusBarWidth
+        }
+      ]}>
+        <LinearGradient
+          colors={isConnected ? ['#43A047', '#2E7D32'] : ['#E53935', '#C62828']} 
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
           style={[
-            styles.indicator,
-            isConnected ? styles.connectedIndicator : styles.disconnectedIndicator,
-            { transform: [{ scale: pulseAnim }] }
-          ]} 
-        />
-        
-        <Text style={styles.statusText}>
-          {isConnected ? 'Conectado ao servidor' : 'Offline - Modo local'}
-        </Text>
-        
-        <TouchableOpacity 
-          style={styles.configButton}
-          onPress={onConfigPress}
+            styles.statusGradient,
+            isConnected ? styles.connectedStatus : styles.disconnectedStatus
+          ]}
         >
-          <Text style={styles.configText}>Config</Text>
-        </TouchableOpacity>
-      </View>
+          <Animated.View 
+            style={[
+              styles.indicator,
+              isConnected ? styles.connectedIndicator : styles.disconnectedIndicator,
+              { transform: [{ scale: pulseAnim }] }
+            ]} 
+          />
+          
+          <Text style={styles.statusText}>
+            {isConnected ? 'Conectado ao servidor' : 'Offline - Modo local'}
+          </Text>
+          
+          <TouchableOpacity 
+            style={styles.configButton}
+            onPress={onConfigPress}
+          >
+            <Text style={styles.configText}>Config</Text>
+          </TouchableOpacity>
+        </LinearGradient>
+      </Animated.View>
       
       <View style={styles.syncContainer}>
-        <TouchableOpacity 
-          style={[
-            styles.syncButton, 
-            isSyncing ? styles.syncingButton : (isConnected ? styles.connectedSyncButton : styles.disconnectedSyncButton)
-          ]}
-          onPress={handleSync}
-          disabled={isSyncing}
-        >
-          {isSyncing ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Text style={styles.syncText}>
-              {syncStats.pendentes > 0 
-                ? `Sincronizar (${syncStats.pendentes} pendentes)` 
-                : 'Sincronizar'}
-            </Text>
-          )}
-        </TouchableOpacity>
+        <Animated.View style={{
+          transform: [{ scale: syncButtonScale }],
+          opacity: syncButtonOpacity
+        }}>
+          <TouchableOpacity 
+            style={[
+              styles.syncButton, 
+              isSyncing ? styles.syncingButton : (isConnected ? styles.connectedSyncButton : styles.disconnectedSyncButton),
+              Platform.OS === 'ios' ? styles.iosShadow : styles.androidShadow
+            ]}
+            onPress={handleSync}
+            disabled={isSyncing}
+          >
+            {isSyncing ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.syncText}>
+                {syncStats.pendentes > 0 
+                  ? `Sincronizar (${syncStats.pendentes} pendentes)` 
+                  : 'Sincronizar'}
+              </Text>
+            )}
+          </TouchableOpacity>
+        </Animated.View>
         
         {isResultVisible && (
           <Animated.View 
             style={[
               styles.resultContainer,
-              { opacity: resultOpacity }
+              { opacity: resultOpacity },
+              Platform.OS === 'ios' ? styles.iosShadow : styles.androidShadow
             ]}
           >
             <Text style={[
@@ -214,60 +277,76 @@ const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ onConfigPress }) =>
 const styles = StyleSheet.create({
   container: {
     marginBottom: 10,
+    alignItems: 'center',
   },
   statusContainer: {
+    marginHorizontal: 15,
+    marginBottom: 5,
+    borderRadius: 30,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  statusGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 15,
-    paddingVertical: 10,
-    backgroundColor: COLORS.white,
-    borderRadius: 20,
-    marginHorizontal: 15,
-    marginBottom: 5,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    paddingVertical: 12,
+    borderRadius: 30,
+  },
+  connectedStatus: {
+    // Additional styles for connected status
+  },
+  disconnectedStatus: {
+    // Additional styles for disconnected status
   },
   indicator: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    marginRight: 8,
+    marginRight: 10,
   },
   connectedIndicator: {
-    backgroundColor: COLORS.success,
-    shadowColor: COLORS.success,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#FFFFFF',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.7,
+    shadowRadius: 5,
+    elevation: 4,
   },
   disconnectedIndicator: {
-    backgroundColor: COLORS.error,
-    shadowColor: COLORS.error,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#FFFFFF',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.7,
+    shadowRadius: 5,
+    elevation: 4,
   },
   statusText: {
     flex: 1,
     fontSize: 14,
-    color: COLORS.black,
-    fontWeight: '500',
+    color: COLORS.white,
+    fontWeight: '600',
   },
   configButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: COLORS.ultraLightGrey,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderRadius: 15,
   },
   configText: {
     fontSize: 12,
-    color: COLORS.black,
-    fontWeight: '500',
+    color: COLORS.white,
+    fontWeight: '600',
   },
   syncContainer: {
     alignItems: 'center',
@@ -279,11 +358,15 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     minWidth: 170,
     alignItems: 'center',
+  },
+  iosShadow: {
     shadowColor: COLORS.black,
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowRadius: 4,
+  },
+  androidShadow: {
+    elevation: 4,
   },
   syncingButton: {
     backgroundColor: COLORS.info,
@@ -300,28 +383,22 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   resultContainer: {
-    marginTop: 8,
+    marginTop: 10,
     paddingHorizontal: 15,
-    paddingVertical: 6,
+    paddingVertical: 8,
     backgroundColor: COLORS.white,
     borderRadius: 15,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1,
   },
   resultText: {
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: '500',
     textAlign: 'center',
   },
   successResultText: {
     color: COLORS.success,
-    fontWeight: '500',
   },
   errorResultText: {
     color: COLORS.error,
-    fontWeight: '500',
   },
 });
 

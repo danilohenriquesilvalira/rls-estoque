@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -10,19 +10,23 @@ import {
   ScrollView,
   Platform,
   ActivityIndicator,
-  Switch
+  Switch,
+  Animated,
+  Easing,
+  Dimensions
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { LinearGradient } from 'expo-linear-gradient';
 import { criarProduto } from '../services/api';
 import Header from '../components/Header';
 
-// Definição do tipo para as propriedades de navegação
+// Definition of navigation props type
 type AddProductScreenProps = {
   navigation: NativeStackNavigationProp<any, 'AddProduct'>;
 };
 
-// Interface para o produto (formato da API)
+// Interface for product (API format)
 interface Produto {
   codigo: string;
   nome: string;
@@ -34,7 +38,7 @@ interface Produto {
   notas?: string;
 }
 
-// Definir cores
+// Define colors
 const COLORS = {
   primary: '#1565C0',
   primaryDark: '#0D47A1',
@@ -52,6 +56,9 @@ const COLORS = {
   background: '#F7F9FD',
 };
 
+// Get screen dimensions
+const { width: screenWidth } = Dimensions.get('window');
+
 export default function AddProductScreen({ navigation }: AddProductScreenProps) {
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
@@ -64,39 +71,62 @@ export default function AddProductScreen({ navigation }: AddProductScreenProps) 
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [saving, setSaving] = useState(false);
   const [autoGenerateCode, setAutoGenerateCode] = useState(false);
+  
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  const advancedOptionsHeight = useRef(new Animated.Value(0)).current;
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const saveButtonScale = useRef(new Animated.Value(1)).current;
 
-  // Carregar configurações do usuário
+  // Load user settings
   useEffect(() => {
     const loadSettings = async () => {
       try {
         const settingsJson = await AsyncStorage.getItem('@app_settings');
         if (settingsJson) {
           const settings = JSON.parse(settingsJson);
-          // Usar a configuração salva ou padrão para true
+          // Use saved setting or default to true
           setAutoGenerateCode(settings.autoGenerateCode ?? true);
         }
       } catch (error) {
-        console.error("Erro ao carregar configurações:", error);
+        console.error("Error loading settings:", error);
       }
     };
     
     loadSettings();
+    
+    // Start entry animations
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.ease)
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.back(1.5))
+      })
+    ]).start();
   }, []);
 
-  // Gerar código automático
+  // Generate automatic code
   const generateProductCode = async () => {
     try {
-      // Usar a chave correta 'produtos' em vez de 'products'
+      // Use the correct key 'produtos' instead of 'products'
       const jsonValue = await AsyncStorage.getItem('produtos');
       let produtosList: Produto[] = jsonValue != null ? JSON.parse(jsonValue) : [];
       
-      // Se não há produtos, começar com 1001
+      // If there are no products, start with 1001
       if (produtosList.length === 0) {
         setCode('1001');
         return;
       }
       
-      // Encontrar o maior código numérico
+      // Find the highest numeric code
       const numericCodes = produtosList
         .map(item => parseInt(item.codigo))
         .filter(code => !isNaN(code));
@@ -106,33 +136,72 @@ export default function AddProductScreen({ navigation }: AddProductScreenProps) 
         return;
       }
       
-      // Próximo código é o maior + 1
+      // Next code is the highest + 1
       const nextCode = Math.max(...numericCodes) + 1;
       setCode(nextCode.toString());
       
     } catch (error) {
-      console.error("Erro ao gerar código:", error);
-      // Usar timestamp como fallback
+      console.error("Error generating code:", error);
+      // Use timestamp as fallback
       setCode(Date.now().toString().slice(-6));
     }
   };
 
-  // Efeito quando o usuário ativa a opção de código automático
+  // Effect when user activates auto code option
   React.useEffect(() => {
     if (autoGenerateCode) {
       generateProductCode();
     }
   }, [autoGenerateCode]);
+  
+  // Toggle advanced options with animation
+  const toggleAdvancedOptions = () => {
+    const toValue = showAdvancedOptions ? 0 : 1;
+    
+    // Rotate the arrow icon
+    Animated.timing(spinAnim, {
+      toValue,
+      duration: 300,
+      useNativeDriver: true,
+      easing: Easing.inOut(Easing.ease)
+    }).start();
+    
+    // Animate the height/opacity of advanced options
+    Animated.timing(advancedOptionsHeight, {
+      toValue,
+      duration: 300,
+      useNativeDriver: false, // Using height which requires non-native driver
+      easing: Easing.inOut(Easing.ease)
+    }).start();
+    
+    setShowAdvancedOptions(!showAdvancedOptions);
+  };
 
-  // Salvar produto
+  // Save product
   const saveProduct = async () => {
-    // Validação básica
+    // Basic validation
     if (!code.trim() || !name.trim()) {
       Alert.alert("Erro", "Código e nome são obrigatórios");
       return;
     }
+    
+    // Button press animation
+    Animated.sequence([
+      Animated.timing(saveButtonScale, {
+        toValue: 0.95,
+        duration: 100,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.ease)
+      }),
+      Animated.timing(saveButtonScale, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.back(2))
+      })
+    ]).start();
 
-    // Criar objeto de produto no formato esperado pela API
+    // Create product object in the format expected by the API
     const novoProduto: Produto = {
       codigo: code.trim(),
       nome: name.trim(),
@@ -140,7 +209,7 @@ export default function AddProductScreen({ navigation }: AddProductScreenProps) 
       quantidade: parseInt(quantity) || 0
     };
 
-    // Adicionar campos opcionais se preenchidos
+    // Add optional fields if filled
     if (location.trim()) novoProduto.localizacao = location.trim();
     if (supplier.trim()) novoProduto.fornecedor = supplier.trim();
     if (notes.trim()) novoProduto.notas = notes.trim();
@@ -154,8 +223,8 @@ export default function AddProductScreen({ navigation }: AddProductScreenProps) 
     try {
       setSaving(true);
       
-      // Usar o serviço de API para criar o produto
-      // Este serviço já lida com modo offline e sincronização
+      // Use the API service to create the product
+      // This service already handles offline mode and synchronization
       await criarProduto(novoProduto);
       
       Alert.alert(
@@ -165,14 +234,14 @@ export default function AddProductScreen({ navigation }: AddProductScreenProps) 
           {
             text: "Adicionar outro",
             onPress: () => {
-              // Limpar formulário, mas manter alguns campos opcionais
+              // Clear form, but keep some optional fields
               setCode('');
               setName('');
               setDescription('');
               setQuantity('0');
               setNotes('');
               
-              // Se autocode está ativado, gerar novo código
+              // If autocode is active, generate new code
               if (autoGenerateCode) {
                 generateProductCode();
               }
@@ -187,7 +256,7 @@ export default function AddProductScreen({ navigation }: AddProductScreenProps) 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       Alert.alert("Erro", `Não foi possível salvar o produto: ${errorMessage}`);
-      console.error("Erro ao salvar produto:", error);
+      console.error("Error saving product:", error);
     } finally {
       setSaving(false);
     }
@@ -198,17 +267,33 @@ export default function AddProductScreen({ navigation }: AddProductScreenProps) 
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       style={styles.container}
     >
-      <View style={styles.header}>
+      <LinearGradient
+        colors={[COLORS.primary, COLORS.primaryDark]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
         <Header 
           title="Adicionar Produto" 
           showLogo={false} 
           showBack={true} 
           onBack={() => navigation.goBack()} 
         />
-      </View>
+      </LinearGradient>
       
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.card}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <Animated.View 
+          style={[
+            styles.card,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }]
+            }
+          ]}
+        >
           <Text style={styles.formTitle}>Novo Produto</Text>
           
           <View style={styles.codeContainer}>
@@ -263,14 +348,33 @@ export default function AddProductScreen({ navigation }: AddProductScreenProps) 
           
           <TouchableOpacity 
             style={styles.optionsButton}
-            onPress={() => setShowAdvancedOptions(!showAdvancedOptions)}
+            onPress={toggleAdvancedOptions}
           >
-            <Text style={styles.optionsButtonText}>
-              {showAdvancedOptions ? '▲ Ocultar Opções Avançadas' : '▼ Mostrar Opções Avançadas'}
-            </Text>
+            <View style={styles.optionsButtonContent}>
+              <Text style={styles.optionsButtonText}>
+                {showAdvancedOptions ? 'Ocultar Opções Avançadas' : 'Mostrar Opções Avançadas'}
+              </Text>
+              <Animated.View style={{
+                transform: [{
+                  rotate: spinAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0deg', '180deg']
+                  })
+                }]
+              }}>
+                <Text style={styles.optionsButtonIcon}>▼</Text>
+              </Animated.View>
+            </View>
           </TouchableOpacity>
           
-          {showAdvancedOptions && (
+          <Animated.View style={{
+            opacity: advancedOptionsHeight,
+            height: advancedOptionsHeight.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, 350] // Approximate height of advanced options
+            }),
+            overflow: 'hidden'
+          }}>
             <View style={styles.advancedOptions}>
               <Text style={styles.label}>Localização no Armazém</Text>
               <TextInput
@@ -307,20 +411,32 @@ export default function AddProductScreen({ navigation }: AddProductScreenProps) 
                 numberOfLines={3}
               />
             </View>
-          )}
+          </Animated.View>
           
-          <TouchableOpacity 
-            style={styles.saveButton}
-            onPress={saveProduct}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <Text style={styles.saveButtonText}>Salvar Produto</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+          <Animated.View style={{
+            transform: [{ scale: saveButtonScale }]
+          }}>
+            <TouchableOpacity 
+              style={styles.saveButton}
+              onPress={saveProduct}
+              disabled={saving}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={[COLORS.success, '#1B5E20']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.saveButtonGradient}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Salvar Produto</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </Animated.View>
+        </Animated.View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -332,24 +448,42 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   header: {
-    backgroundColor: COLORS.primary,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.black,
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 5,
+      },
+    }),
   },
   scrollContent: {
-    padding: 15,
+    padding: 16,
     paddingBottom: 30,
   },
   card: {
     backgroundColor: COLORS.white,
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 20,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.black,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   formTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
     marginBottom: 20,
     textAlign: 'center',
@@ -363,7 +497,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   autoCodeContainer: {
-    marginLeft: 10,
+    marginLeft: 12,
     marginBottom: 15,
     alignItems: 'center',
   },
@@ -376,7 +510,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.black,
     marginTop: 12,
-    marginBottom: 5,
+    marginBottom: 6,
+    fontWeight: '500',
   },
   input: {
     backgroundColor: COLORS.ultraLightGrey,
@@ -400,32 +535,46 @@ const styles = StyleSheet.create({
     padding: 10,
     alignItems: 'center',
   },
+  optionsButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   optionsButtonText: {
     color: COLORS.primary,
+    fontSize: 15,
+    fontWeight: '600',
+    marginRight: 6,
+  },
+  optionsButtonIcon: {
+    color: COLORS.primary,
     fontSize: 14,
-    fontWeight: '500',
   },
   advancedOptions: {
-    marginTop: 5,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.lightGrey,
-    paddingTop: 15,
+    paddingTop: 5,
   },
   saveButton: {
-    backgroundColor: COLORS.success,
-    padding: 15,
     borderRadius: 25,
-    alignItems: 'center',
     marginTop: 25,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.black,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  saveButtonGradient: {
+    padding: 16,
+    alignItems: 'center',
   },
   saveButtonText: {
     color: COLORS.white,
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
   },
 });
