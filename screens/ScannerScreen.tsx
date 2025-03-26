@@ -91,6 +91,19 @@ export default function ScannerScreen({ navigation }: ScannerScreenProps) {
         };
       }
       
+      // CORREÇÃO: Normalizar propriedades do produto para o formato esperado pelo sistema
+      const normalizedProduct = {
+        codigo: productData.code,
+        nome: productData.name,
+        descricao: productData.description || '',
+        quantidade: typeof productData.quantity === 'number' ? productData.quantity : 0,
+        // Incluir outras propriedades padrão que podem ser necessárias
+        quantidade_minima: 0,
+        localizacao: '',
+        fornecedor: '',
+        notas: ''
+      };
+      
       setLoading(false);
       
       Alert.alert(
@@ -99,7 +112,7 @@ export default function ScannerScreen({ navigation }: ScannerScreenProps) {
         [
           {
             text: "Ver Detalhes",
-            onPress: () => navigation.navigate('ProductDetail', { product: productData }),
+            onPress: () => navigation.navigate('ProductDetail', { product: normalizedProduct }),
           },
           {
             text: "Escanear outro",

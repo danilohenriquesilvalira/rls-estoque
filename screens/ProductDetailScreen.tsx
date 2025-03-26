@@ -20,7 +20,7 @@ import Header from '../components/Header';
 // Definição dos tipos para navegação e rota
 type ProductDetailScreenProps = {
   navigation: NativeStackNavigationProp<any, 'ProductDetail'>;
-  route: RouteProp<{ ProductDetail: { product: Produto } }, 'ProductDetail'>;
+  route: RouteProp<{ ProductDetail: { product: any } }, 'ProductDetail'>;
 };
 
 // Interface para o produto
@@ -69,12 +69,27 @@ const COLORS = {
 };
 
 export default function ProductDetailScreen({ route, navigation }: ProductDetailScreenProps) {
-  const { product } = route.params;
-  const [produto, setProduto] = useState<Produto>(product);
+  // Normalizar o produto recebido para garantir compatibilidade
+  // Isso corrige o problema quando o produto vem do scanner (com campos diferentes)
+  const rawProduct = route.params.product;
+  const normalizedProduct: Produto = {
+    id: rawProduct.id,
+    codigo: rawProduct.codigo || rawProduct.code || '',
+    nome: rawProduct.nome || rawProduct.name || '',
+    descricao: rawProduct.descricao || rawProduct.description || '',
+    quantidade: typeof rawProduct.quantidade === 'number' ? rawProduct.quantidade : 
+               (typeof rawProduct.quantity === 'number' ? rawProduct.quantity : 0),
+    quantidade_minima: rawProduct.quantidade_minima || rawProduct.minStock || undefined,
+    localizacao: rawProduct.localizacao || rawProduct.location || '',
+    fornecedor: rawProduct.fornecedor || rawProduct.supplier || '',
+    notas: rawProduct.notas || rawProduct.notes || ''
+  };
+
+  const [produto, setProduto] = useState<Produto>(normalizedProduct);
   const [isEditing, setIsEditing] = useState(false);
-  const [editedName, setEditedName] = useState(product.nome);
-  const [editedDescription, setEditedDescription] = useState(product.descricao || '');
-  const [quantity, setQuantity] = useState(product.quantidade);
+  const [editedName, setEditedName] = useState(normalizedProduct.nome);
+  const [editedDescription, setEditedDescription] = useState(normalizedProduct.descricao || '');
+  const [quantity, setQuantity] = useState(normalizedProduct.quantidade);
   const [saving, setSaving] = useState(false);
   const [showMovementModal, setShowMovementModal] = useState(false);
   const [movementType, setMovementType] = useState<'entrada' | 'saida'>('entrada');
