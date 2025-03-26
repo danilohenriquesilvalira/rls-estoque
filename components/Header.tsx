@@ -66,8 +66,11 @@ const Header: React.FC<HeaderProps> = ({
         <View style={styles.centerContainer}>
           {showLogo ? (
             <View style={styles.logoContainer}>
-              {/* Usar imagem do logo se disponível, se não, usar texto */}
-              <Text style={styles.logoText}>RLS AUTOMAÇÃO</Text>
+              <Image 
+                source={require('../assets/Logo_RLS.svg')} 
+                style={styles.logo}
+                resizeMode="contain"
+              />
             </View>
           ) : (
             <Text style={styles.title}>{title}</Text>
@@ -132,13 +135,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  logoText: {
-    color: COLORS.white,
-    fontSize: 18,
-    fontWeight: 'bold',
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 4,
+  logo: {
+    width: 120,
+    height: 40,
   },
   title: {
     fontSize: 18,

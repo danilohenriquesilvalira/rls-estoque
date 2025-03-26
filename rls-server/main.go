@@ -533,21 +533,25 @@ func criarProduto(c *gin.Context) {
 
 	log.Printf("[DB] Produto criado com sucesso! ID: %d, Código: %s, Nome: %s", p.ID, p.Codigo, p.Nome)
 
-	// Se a quantidade inicial for maior que zero, registrar movimentação de entrada
-	if p.Quantidade > 0 {
-		log.Printf("[DB] Registrando movimentação inicial de entrada para produto ID: %d, Quantidade: %d", p.ID, p.Quantidade)
-		_, err = db.Exec(context.Background(), `
-			INSERT INTO movimentacoes(produto_id, tipo, quantidade, notas)
-			VALUES ($1, 'entrada', $2, 'Estoque inicial')
-		`, p.ID, p.Quantidade)
+	// NOTA: Bloco comentado para evitar duplicação da quantidade inicial
+	// O produto já é criado com a quantidade inicial correta
+	//
+	/*
+	   if p.Quantidade > 0 {
+	       log.Printf("[DB] Registrando movimentação inicial de entrada para produto ID: %d, Quantidade: %d", p.ID, p.Quantidade)
+	       _, err = db.Exec(context.Background(), `
+	           INSERT INTO movimentacoes(produto_id, tipo, quantidade, notas)
+	           VALUES ($1, 'entrada', $2, 'Estoque inicial')
+	       `, p.ID, p.Quantidade)
 
-		if err != nil {
-			log.Printf("[WARN] Erro ao registrar movimentação inicial: %v", err)
-			// Não é um erro crítico, continuamos mesmo se falhar
-		} else {
-			log.Printf("[DB] Movimentação inicial registrada com sucesso")
-		}
-	}
+	       if err != nil {
+	           log.Printf("[WARN] Erro ao registrar movimentação inicial: %v", err)
+	           // Não é um erro crítico, continuamos mesmo se falhar
+	       } else {
+	           log.Printf("[DB] Movimentação inicial registrada com sucesso")
+	       }
+	   }
+	*/
 
 	// Retornar produto criado
 	c.JSON(http.StatusCreated, p)

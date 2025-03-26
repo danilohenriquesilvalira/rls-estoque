@@ -391,6 +391,36 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               </LinearGradient>
               <Text style={styles.menuText}>Dashboard</Text>
             </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.menuItem} 
+              onPress={() => navigation.navigate('History')}
+            >
+              <LinearGradient
+                colors={['#8E24AA', '#4A148C']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.menuIconBg}
+              >
+                <Text style={styles.menuIcon}>📜</Text>
+              </LinearGradient>
+              <Text style={styles.menuText}>Histórico</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.menuItem} 
+              onPress={() => navigation.navigate('Settings')}
+            >
+              <LinearGradient
+                colors={['#757575', '#424242']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.menuIconBg}
+              >
+                <Text style={styles.menuIcon}>⚙️</Text>
+              </LinearGradient>
+              <Text style={styles.menuText}>Configurações</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
