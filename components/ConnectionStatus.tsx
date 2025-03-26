@@ -13,15 +13,35 @@ interface ConnectionStatusProps {
   onConfigPress?: () => void;
 }
 
+// Definir cores
+const COLORS = {
+  primary: '#1565C0',
+  primaryDark: '#0D47A1',
+  primaryLight: '#42A5F5',
+  accent: '#FF6F00',
+  success: '#2E7D32',
+  warning: '#F57F17',
+  error: '#C62828',
+  info: '#0288D1',
+  white: '#FFFFFF',
+  black: '#212121',
+  grey: '#757575',
+  lightGrey: '#EEEEEE',
+  ultraLightGrey: '#F5F5F5',
+  background: '#F7F9FD',
+};
+
 const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ onConfigPress }) => {
   const [isConnected, setIsConnected] = useState(getStatusConexao());
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [syncStats, setSyncStats] = useState({ sincronizados: 0, pendentes: 0 });
   const [isPulsing, setIsPulsing] = useState(false);
+  const [isResultVisible, setIsResultVisible] = useState(false);
 
-  // Animação de pulso para o indicador
+  // Animações
   const pulseAnim = React.useRef(new Animated.Value(1)).current;
+  const resultOpacity = React.useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     // Verificar conexão quando o componente montar
@@ -39,16 +59,30 @@ const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ onConfigPress }) =>
   }, []);
 
   useEffect(() => {
-    // Configurar animação de pulso
+    // Mostrar e ocultar resultado com animação
     if (syncResult) {
-      const timeout = setTimeout(() => {
-        setSyncResult(null);
-      }, 3000);
+      setIsResultVisible(true);
       
-      return () => clearTimeout(timeout);
+      Animated.sequence([
+        Animated.timing(resultOpacity, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true
+        }),
+        Animated.delay(2500),
+        Animated.timing(resultOpacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true
+        })
+      ]).start(() => {
+        setIsResultVisible(false);
+        setSyncResult(null);
+      });
     }
-  }, [syncResult]);
+  }, [syncResult, resultOpacity]);
 
+  // Animar o indicador de status
   useEffect(() => {
     if (isPulsing) {
       Animated.loop(
@@ -137,7 +171,10 @@ const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ onConfigPress }) =>
       
       <View style={styles.syncContainer}>
         <TouchableOpacity 
-          style={[styles.syncButton, isSyncing && styles.syncingButton]}
+          style={[
+            styles.syncButton, 
+            isSyncing ? styles.syncingButton : (isConnected ? styles.connectedSyncButton : styles.disconnectedSyncButton)
+          ]}
           onPress={handleSync}
           disabled={isSyncing}
         >
@@ -152,10 +189,22 @@ const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ onConfigPress }) =>
           )}
         </TouchableOpacity>
         
-        {syncResult && (
-          <View style={styles.resultContainer}>
-            <Text style={styles.resultText}>{syncResult}</Text>
-          </View>
+        {isResultVisible && (
+          <Animated.View 
+            style={[
+              styles.resultContainer,
+              { opacity: resultOpacity }
+            ]}
+          >
+            <Text style={[
+              styles.resultText,
+              syncResult && syncResult.includes('Erro') ? styles.errorResultText : 
+              syncResult && syncResult.includes('Falha') ? styles.errorResultText : 
+              styles.successResultText
+            ]}>
+              {syncResult}
+            </Text>
+          </Animated.View>
         )}
       </View>
     </View>
@@ -170,11 +219,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 15,
-    paddingVertical: 8,
-    backgroundColor: '#f5f5f5',
+    paddingVertical: 10,
+    backgroundColor: COLORS.white,
     borderRadius: 20,
     marginHorizontal: 15,
     marginBottom: 5,
+    shadowColor: COLORS.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   indicator: {
     width: 12,
@@ -183,53 +237,91 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   connectedIndicator: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: COLORS.success,
+    shadowColor: COLORS.success,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    elevation: 2,
   },
   disconnectedIndicator: {
-    backgroundColor: '#F44336',
+    backgroundColor: COLORS.error,
+    shadowColor: COLORS.error,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    elevation: 2,
   },
   statusText: {
     flex: 1,
     fontSize: 14,
-    color: '#424242',
+    color: COLORS.black,
+    fontWeight: '500',
   },
   configButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    backgroundColor: '#E0E0E0',
-    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: COLORS.ultraLightGrey,
+    borderRadius: 15,
   },
   configText: {
     fontSize: 12,
-    color: '#616161',
+    color: COLORS.black,
+    fontWeight: '500',
   },
   syncContainer: {
     alignItems: 'center',
     marginTop: 5,
   },
   syncButton: {
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    backgroundColor: '#1565C0',
-    borderRadius: 5,
-    minWidth: 150,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    minWidth: 170,
     alignItems: 'center',
+    shadowColor: COLORS.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   syncingButton: {
-    backgroundColor: '#42A5F5',
+    backgroundColor: COLORS.info,
+  },
+  connectedSyncButton: {
+    backgroundColor: COLORS.primary,
+  },
+  disconnectedSyncButton: {
+    backgroundColor: COLORS.grey,
   },
   syncText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '500',
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   resultContainer: {
-    marginTop: 5,
+    marginTop: 8,
+    paddingHorizontal: 15,
+    paddingVertical: 6,
+    backgroundColor: COLORS.white,
+    borderRadius: 15,
+    shadowColor: COLORS.black,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
   },
   resultText: {
     fontSize: 12,
-    color: '#616161',
-    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  successResultText: {
+    color: COLORS.success,
+    fontWeight: '500',
+  },
+  errorResultText: {
+    color: COLORS.error,
+    fontWeight: '500',
   },
 });
 

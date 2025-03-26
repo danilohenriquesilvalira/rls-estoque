@@ -15,6 +15,7 @@ import {
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { getProduto, atualizarProduto, deletarProduto, criarMovimentacao, getMovimentacoesPorProduto } from '../services/api';
+import Header from '../components/Header';
 
 // Definição dos tipos para navegação e rota
 type ProductDetailScreenProps = {
@@ -48,6 +49,24 @@ interface Movimentacao {
   produto_codigo?: string;
   produto_nome?: string;
 }
+
+// Definir cores do tema
+const COLORS = {
+  primary: '#1565C0',
+  primaryDark: '#0D47A1',
+  primaryLight: '#42A5F5',
+  accent: '#FF6F00',
+  success: '#2E7D32',
+  warning: '#F57F17',
+  error: '#C62828',
+  info: '#0288D1',
+  white: '#FFFFFF',
+  black: '#212121',
+  grey: '#757575',
+  lightGrey: '#EEEEEE',
+  ultraLightGrey: '#F5F5F5',
+  background: '#F7F9FD',
+};
 
 export default function ProductDetailScreen({ route, navigation }: ProductDetailScreenProps) {
   const { product } = route.params;
@@ -276,10 +295,22 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
       style={styles.container}
       keyboardVerticalOffset={100}
     >
+      <View style={styles.header}>
+        <Header 
+          title="Detalhes do Produto" 
+          showLogo={false} 
+          showBack={true} 
+          onBack={() => navigation.goBack()} 
+        />
+      </View>
+      
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.card}>
-          <View style={styles.header}>
-            <Text style={styles.codeLabel}>Código: {produto.codigo}</Text>
+          <View style={styles.headerRow}>
+            <View style={styles.codeContainer}>
+              <Text style={styles.codeLabel}>Código</Text>
+              <Text style={styles.codeValue}>{produto.codigo}</Text>
+            </View>
             
             {!isEditing ? (
               <TouchableOpacity 
@@ -403,7 +434,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
           <Text style={styles.historyTitle}>Histórico de Movimentações</Text>
           
           {loadingHistory ? (
-            <ActivityIndicator size="small" color="#3498db" style={styles.historyLoader} />
+            <ActivityIndicator size="small" color={COLORS.primary} style={styles.historyLoader} />
           ) : movements.length === 0 ? (
             <Text style={styles.emptyHistoryText}>
               Nenhuma movimentação registrada
@@ -514,80 +545,91 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: COLORS.background,
+  },
+  header: {
+    backgroundColor: COLORS.primary,
   },
   scrollContent: {
     padding: 15,
+    paddingBottom: 30,
   },
   card: {
-    backgroundColor: 'white',
-    borderRadius: 10,
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
     padding: 15,
     marginBottom: 15,
-    shadowColor: '#000',
+    shadowColor: COLORS.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
-  header: {
+  headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 15,
     paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: COLORS.lightGrey,
+  },
+  codeContainer: {
+    flex: 1,
   },
   codeLabel: {
-    fontSize: 14,
+    fontSize: 12,
+    color: COLORS.grey,
+  },
+  codeValue: {
+    fontSize: 16,
     fontWeight: 'bold',
-    color: '#7f8c8d',
+    color: COLORS.primary,
   },
   editButton: {
-    backgroundColor: '#3498db',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 5,
+    backgroundColor: COLORS.primaryLight,
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 20,
   },
   cancelButton: {
-    backgroundColor: '#95a5a6',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 5,
+    backgroundColor: COLORS.grey,
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 20,
   },
   editButtonText: {
-    color: 'white',
+    color: COLORS.white,
     fontSize: 14,
     fontWeight: '500',
   },
   cancelButtonText: {
-    color: 'white',
+    color: COLORS.white,
     fontSize: 14,
     fontWeight: '500',
   },
   label: {
     fontSize: 14,
-    color: '#7f8c8d',
+    color: COLORS.grey,
     marginTop: 10,
   },
   value: {
     fontSize: 16,
-    color: '#2c3e50',
+    color: COLORS.black,
     marginTop: 5,
     marginBottom: 10,
   },
   stockSection: {
-    marginTop: 15,
+    marginTop: 20,
     padding: 15,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 8,
+    backgroundColor: COLORS.ultraLightGrey,
+    borderRadius: 12,
   },
   stockTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 10,
+    color: COLORS.black,
+    marginBottom: 15,
     textAlign: 'center',
   },
   quantityControl: {
@@ -596,18 +638,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   quantityButton: {
-    backgroundColor: '#3498db',
+    backgroundColor: COLORS.primary,
     width: 40,
     height: 40,
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: COLORS.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   disabledButton: {
-    backgroundColor: '#bdc3c7',
+    backgroundColor: COLORS.lightGrey,
   },
   quantityButtonText: {
-    color: 'white',
+    color: COLORS.white,
     fontSize: 20,
     fontWeight: 'bold',
   },
@@ -617,7 +664,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     minWidth: 40,
     textAlign: 'center',
-    color: '#2c3e50',
+    color: COLORS.black,
   },
   buttonsContainer: {
     flexDirection: 'row',
@@ -627,30 +674,40 @@ const styles = StyleSheet.create({
   actionButton: {
     flex: 1,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 25,
     alignItems: 'center',
     marginHorizontal: 5,
+    shadowColor: COLORS.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   entryButton: {
-    backgroundColor: '#2ecc71',
+    backgroundColor: COLORS.success,
   },
   exitButton: {
-    backgroundColor: '#e74c3c',
+    backgroundColor: COLORS.error,
   },
   actionButtonText: {
-    color: 'white',
+    color: COLORS.white,
     fontSize: 14,
     fontWeight: 'bold',
   },
   deleteButton: {
-    backgroundColor: '#e74c3c',
+    backgroundColor: COLORS.error,
     padding: 15,
-    borderRadius: 8,
+    borderRadius: 25,
     alignItems: 'center',
     marginVertical: 10,
+    shadowColor: COLORS.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   deleteButtonText: {
-    color: 'white',
+    color: COLORS.white,
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -659,12 +716,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   input: {
-    backgroundColor: '#f9f9f9',
-    borderRadius: 8,
+    backgroundColor: COLORS.ultraLightGrey,
+    borderRadius: 12,
     padding: 12,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: COLORS.lightGrey,
     marginTop: 5,
     marginBottom: 15,
   },
@@ -673,24 +730,29 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   saveButton: {
-    backgroundColor: '#27ae60',
+    backgroundColor: COLORS.success,
     padding: 15,
-    borderRadius: 8,
+    borderRadius: 25,
     alignItems: 'center',
     marginTop: 10,
+    shadowColor: COLORS.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   saveButtonText: {
-    color: 'white',
+    color: COLORS.white,
     fontSize: 16,
     fontWeight: 'bold',
   },
   // Estilos para o histórico
   historyCard: {
-    backgroundColor: 'white',
-    borderRadius: 10,
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
     padding: 15,
     marginBottom: 15,
-    shadowColor: '#000',
+    shadowColor: COLORS.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -699,7 +761,7 @@ const styles = StyleSheet.create({
   historyTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: COLORS.black,
     marginBottom: 15,
     textAlign: 'center',
   },
@@ -708,7 +770,7 @@ const styles = StyleSheet.create({
   },
   emptyHistoryText: {
     textAlign: 'center',
-    color: '#7f8c8d',
+    color: COLORS.grey,
     fontSize: 14,
     marginVertical: 20,
     fontStyle: 'italic',
@@ -719,15 +781,15 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: COLORS.lightGrey,
   },
   entryText: {
-    color: '#27ae60',
-    borderLeftColor: '#27ae60',
+    color: COLORS.success,
+    borderLeftColor: COLORS.success,
   },
   exitText: {
-    color: '#e74c3c',
-    borderLeftColor: '#e74c3c',
+    color: COLORS.error,
+    borderLeftColor: COLORS.error,
   },
   movementHeader: {
     flexDirection: 'row',
@@ -740,7 +802,7 @@ const styles = StyleSheet.create({
   },
   movementDate: {
     fontSize: 12,
-    color: '#7f8c8d',
+    color: COLORS.grey,
   },
   movementDetails: {
     marginTop: 5,
@@ -751,7 +813,7 @@ const styles = StyleSheet.create({
   },
   movementNotes: {
     fontSize: 14,
-    color: '#7f8c8d',
+    color: COLORS.grey,
     marginTop: 5,
     fontStyle: 'italic',
   },
@@ -763,11 +825,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 10,
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
     padding: 20,
     width: '90%',
-    shadowColor: '#000',
+    shadowColor: COLORS.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
@@ -778,19 +840,20 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 20,
     textAlign: 'center',
+    color: COLORS.black,
   },
   modalLabel: {
     fontSize: 16,
     marginBottom: 5,
-    color: '#2c3e50',
+    color: COLORS.black,
   },
   modalInput: {
-    backgroundColor: '#f9f9f9',
-    borderRadius: 8,
+    backgroundColor: COLORS.ultraLightGrey,
+    borderRadius: 12,
     padding: 12,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: COLORS.lightGrey,
     marginBottom: 15,
   },
   modalTextArea: {
@@ -804,25 +867,25 @@ const styles = StyleSheet.create({
   },
   modalCancelButton: {
     flex: 1,
-    backgroundColor: '#95a5a6',
+    backgroundColor: COLORS.grey,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 25,
     alignItems: 'center',
     marginRight: 10,
   },
   modalConfirmButton: {
     flex: 1,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 25,
     alignItems: 'center',
   },
   modalCancelButtonText: {
-    color: 'white',
+    color: COLORS.white,
     fontSize: 16,
     fontWeight: '500',
   },
   modalConfirmButtonText: {
-    color: 'white',
+    color: COLORS.white,
     fontSize: 16,
     fontWeight: '500',
   },

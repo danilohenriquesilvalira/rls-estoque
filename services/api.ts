@@ -675,39 +675,40 @@ export const criarProduto = async (produto: Produto): Promise<Produto> => {
     if (modoOffline) {
       log('Modo offline: salvando localmente para sincronizar depois');
       // Salvar localmente para sincronizar depois
-      const produtosJson = await AsyncStorage.getItem('produtos');
-      const produtos: Produto[] = produtosJson ? JSON.parse(produtosJson) : [];
-      
-      // Gerar ID temporário
-      produto.id = Date.now();
-      produto.data_criacao = new Date().toISOString();
-      
-      // Adicionar à lista
-      produtos.push(produto);
-      
-      // Salvar no AsyncStorage
-      await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
-      log(`Produto salvo localmente. ID Temp: ${produto.id}`);
-      
-      // Adicionar à fila de sincronização
-      const syncQueueJson = await AsyncStorage.getItem('sync_queue');
-      const syncQueue = syncQueueJson ? JSON.parse(syncQueueJson) : [];
-      
-      syncQueue.push({
-        tipo: 'criar_produto',
-        dados: produto,
-        data: new Date().toISOString(),
-      });
-      
-      await AsyncStorage.setItem('sync_queue', JSON.stringify(syncQueue));
-      log('Produto adicionado à fila de sincronização');
-      
-      // Se a quantidade inicial for maior que zero, registrar movimentação
-      if (produto.quantidade > 0) {
-        registrarMovimentacaoLocal(produto.id, 'entrada', produto.quantidade, 'Estoque inicial');
-      }
-      
-      return produto;
+  const produtosJson = await AsyncStorage.getItem('produtos');
+  const produtos: Produto[] = produtosJson ? JSON.parse(produtosJson) : [];
+  
+  // Gerar ID temporário
+  produto.id = Date.now();
+  produto.data_criacao = new Date().toISOString();
+  
+  // Adicionar à lista
+  produtos.push(produto);
+  
+  // Salvar no AsyncStorage
+  await AsyncStorage.setItem('produtos', JSON.stringify(produtos));
+  log(`Produto salvo localmente. ID Temp: ${produto.id}`);
+  
+  // Adicionar à fila de sincronização
+  const syncQueueJson = await AsyncStorage.getItem('sync_queue');
+  const syncQueue = syncQueueJson ? JSON.parse(syncQueueJson) : [];
+  
+  syncQueue.push({
+    tipo: 'criar_produto',
+    dados: produto,
+    data: new Date().toISOString(),
+  });
+  
+  await AsyncStorage.setItem('sync_queue', JSON.stringify(syncQueue));
+  log('Produto adicionado à fila de sincronização');
+  
+  // REMOVER OU COMENTAR ESTE BLOCO:
+  // Se a quantidade inicial for maior que zero, registrar movimentação
+  // if (produto.quantidade > 0) {
+  //   registrarMovimentacaoLocal(produto.id, 'entrada', produto.quantidade, 'Estoque inicial');
+  // }
+  
+  return produto;
     }
     
     // Fazer requisição à API

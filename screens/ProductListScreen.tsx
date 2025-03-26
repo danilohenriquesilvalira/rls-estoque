@@ -9,10 +9,12 @@ import {
   TextInput,
   Alert,
   RefreshControl,
-  Platform
+  Platform,
+  StatusBar
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { getProdutos, verificarConexao, getStatusConexao } from '../services/api';
+import Header from '../components/Header';
 
 // Definição do tipo para as propriedades de navegação
 type ProductListScreenProps = {
@@ -33,6 +35,24 @@ interface Produto {
   data_criacao?: string;
   data_atualizacao?: string;
 }
+
+// Definir cores do tema
+const COLORS = {
+  primary: '#1565C0',
+  primaryDark: '#0D47A1',
+  primaryLight: '#42A5F5',
+  accent: '#FF6F00',
+  success: '#2E7D32',
+  warning: '#F57F17',
+  error: '#C62828',
+  info: '#0288D1',
+  white: '#FFFFFF',
+  black: '#212121',
+  grey: '#757575',
+  lightGrey: '#EEEEEE',
+  ultraLightGrey: '#F5F5F5',
+  background: '#F7F9FD',
+};
 
 export default function ProductListScreen({ navigation }: ProductListScreenProps) {
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -151,9 +171,20 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
   // Renderizar o indicador de carregamento
   if (loading && !refreshing) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#3498db" />
-        <Text style={styles.loadingText}>Carregando produtos...</Text>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Header 
+            title="Lista de Produtos" 
+            showLogo={false} 
+            showBack={true} 
+            onBack={() => navigation.goBack()} 
+          />
+        </View>
+
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#3498db" />
+          <Text style={styles.loadingText}>Carregando produtos...</Text>
+        </View>
       </View>
     );
   }
@@ -218,6 +249,15 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
 
   return (
     <View style={styles.container}>
+      <View style={styles.header}>
+        <Header 
+          title="Lista de Produtos" 
+          showLogo={false} 
+          showBack={true} 
+          onBack={() => navigation.goBack()} 
+        />
+      </View>
+
       {!isOnline && (
         <View style={styles.offlineBanner}>
           <Text style={styles.offlineText}>Modo Offline - Exibindo dados locais</Text>
@@ -226,13 +266,16 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
       
       {/* Barra de pesquisa */}
       <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Pesquisar produtos..."
-          value={searchText}
-          onChangeText={setSearchText}
-          clearButtonMode="while-editing"
-        />
+        <View style={styles.searchInputContainer}>
+          <Text style={styles.searchIcon}>🔍</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Pesquisar produtos..."
+            value={searchText}
+            onChangeText={setSearchText}
+            clearButtonMode="while-editing"
+          />
+        </View>
       </View>
       
       {/* Cabeçalho de ordenação */}
@@ -241,7 +284,10 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
           style={styles.sortButton} 
           onPress={() => updateSortOrder('codigo')}
         >
-          <Text style={styles.sortButtonText}>
+          <Text style={[
+            styles.sortButtonText,
+            sortOrder === 'codigo' && styles.activeSortText
+          ]}>
             Código {getSortIcon('codigo')}
           </Text>
         </TouchableOpacity>
@@ -250,7 +296,10 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
           style={styles.sortButtonName} 
           onPress={() => updateSortOrder('nome')}
         >
-          <Text style={styles.sortButtonText}>
+          <Text style={[
+            styles.sortButtonText,
+            sortOrder === 'nome' && styles.activeSortText
+          ]}>
             Nome {getSortIcon('nome')}
           </Text>
         </TouchableOpacity>
@@ -259,7 +308,10 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
           style={styles.sortButton} 
           onPress={() => updateSortOrder('quantidade')}
         >
-          <Text style={styles.sortButtonText}>
+          <Text style={[
+            styles.sortButtonText,
+            sortOrder === 'quantidade' && styles.activeSortText
+          ]}>
             Qtd {getSortIcon('quantidade')}
           </Text>
         </TouchableOpacity>
@@ -271,7 +323,7 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
         keyExtractor={(item) => item.codigo}
         renderItem={renderProductItem}
         ListEmptyComponent={renderEmptyList}
-        contentContainerStyle={filteredProdutos.length === 0 ? { flex: 1 } : {}}
+        contentContainerStyle={filteredProdutos.length === 0 ? { flex: 1 } : { paddingBottom: 80 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -279,7 +331,8 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
               setRefreshing(true);
               loadProdutos();
             }}
-            colors={['#3498db']}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
           />
         }
       />
@@ -298,65 +351,84 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: COLORS.background,
+  },
+  header: {
+    backgroundColor: COLORS.primary,
   },
   centerContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: COLORS.background,
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: '#7f8c8d',
+    color: COLORS.grey,
   },
   searchContainer: {
-    backgroundColor: 'white',
-    padding: 10,
+    backgroundColor: COLORS.white,
+    padding: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
   },
-  searchInput: {
-    height: 40,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 8,
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.ultraLightGrey,
+    borderRadius: 12,
     paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  searchIcon: {
     fontSize: 16,
+    marginRight: 8,
+    color: COLORS.grey,
+  },
+  searchInput: {
+    flex: 1,
+    height: 40,
+    fontSize: 16,
+    color: COLORS.black,
   },
   sortHeader: {
     flexDirection: 'row',
-    backgroundColor: '#e8e8e8',
-    padding: 10,
+    backgroundColor: COLORS.white,
+    padding: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#d0d0d0',
+    borderBottomColor: '#e0e0e0',
   },
   sortButton: {
     flex: 1,
-    paddingVertical: 5,
+    paddingVertical: 8,
     alignItems: 'center',
   },
   sortButtonName: {
     flex: 2,
-    paddingVertical: 5,
+    paddingVertical: 8,
     alignItems: 'center',
   },
   sortButtonText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#555',
+    color: COLORS.grey,
+  },
+  activeSortText: {
+    color: COLORS.primary,
+    fontWeight: 'bold',
   },
   productItem: {
     flexDirection: 'row',
-    backgroundColor: 'white',
-    marginHorizontal: 10,
-    marginTop: 10,
+    backgroundColor: COLORS.white,
+    marginHorizontal: 15,
+    marginTop: 15,
     padding: 15,
-    borderRadius: 8,
+    borderRadius: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 4,
     elevation: 2,
   },
   productInfo: {
@@ -364,45 +436,52 @@ const styles = StyleSheet.create({
   },
   productCode: {
     fontSize: 14,
+    color: COLORS.primary,
     fontWeight: 'bold',
-    color: '#2c3e50',
   },
   productName: {
     fontSize: 16,
-    color: '#2c3e50',
+    color: COLORS.black,
     marginTop: 4,
     fontWeight: '500',
   },
   productDescription: {
     fontSize: 14,
-    color: '#7f8c8d',
+    color: COLORS.grey,
     marginTop: 4,
   },
   quantityContainer: {
-    padding: 10,
-    borderRadius: 8,
+    width: 60,
+    height: 60,
+    borderRadius: 12,
     alignItems: 'center',
-    minWidth: 60,
     justifyContent: 'center',
     marginLeft: 10,
   },
   lowQuantity: {
-    backgroundColor: '#ffcccc',
+    backgroundColor: '#FFEBEE',
+    borderWidth: 1,
+    borderColor: '#FFCDD2',
   },
   normalQuantity: {
-    backgroundColor: '#e8f4f8',
+    backgroundColor: '#E3F2FD',
+    borderWidth: 1,
+    borderColor: '#BBDEFB',
   },
   highQuantity: {
-    backgroundColor: '#d5f5e3',
+    backgroundColor: '#E8F5E9',
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
   },
   quantity: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: COLORS.black,
   },
   quantityLabel: {
     fontSize: 12,
-    color: '#7f8c8d',
+    color: COLORS.grey,
+    marginTop: 2,
   },
   emptyContainer: {
     flex: 1,
@@ -412,31 +491,31 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#7f8c8d',
+    color: COLORS.grey,
     marginBottom: 20,
     textAlign: 'center',
   },
   addButton: {
-    backgroundColor: '#3498db',
+    backgroundColor: COLORS.primary,
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
     width: '80%',
   },
   clearButton: {
-    backgroundColor: '#95a5a6',
+    backgroundColor: COLORS.grey,
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
     width: '60%',
   },
   buttonText: {
-    color: 'white',
+    color: COLORS.white,
     fontSize: 16,
     fontWeight: 'bold',
   },
   clearButtonText: {
-    color: 'white',
+    color: COLORS.white,
     fontSize: 14,
     fontWeight: '500',
   },
@@ -447,7 +526,7 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#3498db',
+    backgroundColor: COLORS.accent,
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 5,
@@ -458,15 +537,16 @@ const styles = StyleSheet.create({
   },
   floatingButtonText: {
     fontSize: 30,
-    color: 'white',
+    color: COLORS.white,
+    fontWeight: 'bold',
   },
   offlineBanner: {
-    backgroundColor: '#e74c3c',
+    backgroundColor: COLORS.error,
     padding: 8,
     alignItems: 'center',
   },
   offlineText: {
-    color: 'white',
+    color: COLORS.white,
     fontSize: 14,
     fontWeight: '500',
   },

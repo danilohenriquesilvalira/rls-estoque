@@ -5,14 +5,21 @@ import {
   Text,
   TouchableOpacity,
   Platform,
-  StatusBar
+  StatusBar,
+  Image
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Defina as cores e estilos diretamente aqui para evitar dependências
 const COLORS = {
   primary: '#1565C0',
+  primaryDark: '#0D47A1',
+  primaryLight: '#42A5F5',
   white: '#FFFFFF',
+  black: '#212121',
+  grey: '#757575',
   statusBar: '#0D47A1',
+  transparent: 'transparent',
 };
 
 interface HeaderProps {
@@ -30,16 +37,25 @@ const Header: React.FC<HeaderProps> = ({
   onBack,
   rightComponent
 }) => {
+  const insets = useSafeAreaInsets();
+  const statusBarHeight = Platform.OS === 'ios' ? insets.top : StatusBar.currentHeight || 0;
+
   return (
-    <View style={styles.container}>
-      <StatusBar backgroundColor={COLORS.statusBar} barStyle="light-content" />
+    <View style={[styles.container, { paddingTop: statusBarHeight }]}>
+      {/* Barra de Status */}
+      <StatusBar backgroundColor="transparent" translucent barStyle="light-content" />
       
       <View style={styles.content}>
         {/* Lado esquerdo - Botão Voltar ou Espaço */}
         <View style={styles.leftContainer}>
           {showBack ? (
-            <TouchableOpacity onPress={onBack} style={styles.backButton}>
-              <Text style={styles.backText}>←</Text>
+            <TouchableOpacity 
+              onPress={onBack} 
+              style={styles.backButton}
+            >
+              <View style={styles.backIconContainer}>
+                <Text style={styles.backIcon}>←</Text>
+              </View>
             </TouchableOpacity>
           ) : (
             <View style={styles.spacer} />
@@ -50,7 +66,7 @@ const Header: React.FC<HeaderProps> = ({
         <View style={styles.centerContainer}>
           {showLogo ? (
             <View style={styles.logoContainer}>
-              {/* Logo Texto como Fallback */}
+              {/* Usar imagem do logo se disponível, se não, usar texto */}
               <Text style={styles.logoText}>RLS AUTOMAÇÃO</Text>
             </View>
           ) : (
@@ -69,8 +85,8 @@ const Header: React.FC<HeaderProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: COLORS.primary,
-    paddingTop: Platform.OS === 'ios' ? 50 : StatusBar.currentHeight || 0,
+    backgroundColor: 'transparent',
+    width: '100%',
   },
   content: {
     height: 60,
@@ -95,13 +111,20 @@ const styles = StyleSheet.create({
   backButton: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  backText: {
+  backIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  backIcon: {
     color: COLORS.white,
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
   },
   logoContainer: {
@@ -113,11 +136,17 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 18,
     fontWeight: 'bold',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 4,
   },
   title: {
     fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.white,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
   },
   spacer: {
     width: 40,

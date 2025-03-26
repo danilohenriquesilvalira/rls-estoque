@@ -15,6 +15,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { criarProduto } from '../services/api';
+import Header from '../components/Header';
 
 // Definição do tipo para as propriedades de navegação
 type AddProductScreenProps = {
@@ -32,6 +33,24 @@ interface Produto {
   fornecedor?: string;
   notas?: string;
 }
+
+// Definir cores
+const COLORS = {
+  primary: '#1565C0',
+  primaryDark: '#0D47A1',
+  primaryLight: '#42A5F5',
+  accent: '#FF6F00',
+  success: '#2E7D32',
+  warning: '#F57F17',
+  error: '#C62828',
+  info: '#0288D1',
+  white: '#FFFFFF',
+  black: '#212121',
+  grey: '#757575',
+  lightGrey: '#EEEEEE',
+  ultraLightGrey: '#F5F5F5',
+  background: '#F7F9FD',
+};
 
 export default function AddProductScreen({ navigation }: AddProductScreenProps) {
   const [code, setCode] = useState('');
@@ -179,9 +198,18 @@ export default function AddProductScreen({ navigation }: AddProductScreenProps) 
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       style={styles.container}
     >
+      <View style={styles.header}>
+        <Header 
+          title="Adicionar Produto" 
+          showLogo={false} 
+          showBack={true} 
+          onBack={() => navigation.goBack()} 
+        />
+      </View>
+      
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.card}>
-          <Text style={styles.formTitle}>Adicionar Novo Produto</Text>
+          <Text style={styles.formTitle}>Novo Produto</Text>
           
           <View style={styles.codeContainer}>
             <View style={styles.codeInputContainer}>
@@ -200,8 +228,8 @@ export default function AddProductScreen({ navigation }: AddProductScreenProps) 
               <Switch
                 value={autoGenerateCode}
                 onValueChange={setAutoGenerateCode}
-                trackColor={{ false: "#cccccc", true: "#81b0ff" }}
-                thumbColor={autoGenerateCode ? "#3498db" : "#f4f3f4"}
+                trackColor={{ false: "#cccccc", true: COLORS.primaryLight }}
+                thumbColor={autoGenerateCode ? COLORS.primary : "#f4f3f4"}
               />
             </View>
           </View>
@@ -238,7 +266,7 @@ export default function AddProductScreen({ navigation }: AddProductScreenProps) 
             onPress={() => setShowAdvancedOptions(!showAdvancedOptions)}
           >
             <Text style={styles.optionsButtonText}>
-              {showAdvancedOptions ? 'Ocultar Opções Avançadas' : 'Mostrar Opções Avançadas'}
+              {showAdvancedOptions ? '▲ Ocultar Opções Avançadas' : '▼ Mostrar Opções Avançadas'}
             </Text>
           </TouchableOpacity>
           
@@ -301,27 +329,31 @@ export default function AddProductScreen({ navigation }: AddProductScreenProps) 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: COLORS.background,
+  },
+  header: {
+    backgroundColor: COLORS.primary,
   },
   scrollContent: {
     padding: 15,
+    paddingBottom: 30,
   },
   card: {
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 15,
-    shadowColor: '#000',
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    padding: 20,
+    shadowColor: COLORS.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
   formTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 20,
     textAlign: 'center',
-    color: '#2c3e50',
+    color: COLORS.primary,
   },
   codeContainer: {
     flexDirection: 'row',
@@ -337,26 +369,26 @@ const styles = StyleSheet.create({
   },
   autoCodeLabel: {
     fontSize: 12,
-    color: '#7f8c8d',
+    color: COLORS.grey,
     marginBottom: 5,
   },
   label: {
     fontSize: 16,
-    color: '#2c3e50',
+    color: COLORS.black,
     marginTop: 12,
     marginBottom: 5,
   },
   input: {
-    backgroundColor: '#f9f9f9',
-    borderRadius: 8,
-    padding: 12,
+    backgroundColor: COLORS.ultraLightGrey,
+    borderRadius: 12,
+    padding: 15,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: COLORS.lightGrey,
   },
   disabledInput: {
     backgroundColor: '#ecf0f1',
-    color: '#7f8c8d',
+    color: COLORS.grey,
   },
   textArea: {
     minHeight: 100,
@@ -369,24 +401,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   optionsButtonText: {
-    color: '#3498db',
+    color: COLORS.primary,
     fontSize: 14,
+    fontWeight: '500',
   },
   advancedOptions: {
     marginTop: 5,
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-    paddingTop: 10,
+    borderTopColor: COLORS.lightGrey,
+    paddingTop: 15,
   },
   saveButton: {
-    backgroundColor: '#27ae60',
+    backgroundColor: COLORS.success,
     padding: 15,
-    borderRadius: 8,
+    borderRadius: 25,
     alignItems: 'center',
     marginTop: 25,
+    shadowColor: COLORS.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   saveButtonText: {
-    color: 'white',
+    color: COLORS.white,
     fontSize: 16,
     fontWeight: 'bold',
   },
