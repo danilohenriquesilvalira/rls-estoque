@@ -10,9 +10,13 @@ import {
   Alert,
   Share,
   Animated,
+  Easing,
   TextInput,
   Switch,
-  Platform
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  Dimensions
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -20,6 +24,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../contexts/ThemeContext';
 import Header from '../components/Header';
 import { gerarListaCompras } from '../services/stockPrediction';
+import { MaterialIcons } from '@expo/vector-icons';
 
 type ShoppingListScreenProps = {
   navigation: NativeStackNavigationProp<any, 'ShoppingList'>;
@@ -38,6 +43,9 @@ interface ProdutoListaCompras {
   fornecedor?: string; // Fornecedor preferencial
 }
 
+// Screen dimensions
+const { width: screenWidth } = Dimensions.get('window');
+
 const ShoppingListScreen: React.FC<ShoppingListScreenProps> = ({ navigation }) => {
   const { theme } = useTheme();
   const { COLORS } = theme;
@@ -51,10 +59,14 @@ const ShoppingListScreen: React.FC<ShoppingListScreenProps> = ({ navigation }) =
   
   const [totalValorEstimado, setTotalValorEstimado] = useState(0);
   const [fornecedoresList, setFornecedoresList] = useState<string[]>([]);
+  const [fornecedorFiltrado, setFornecedorFiltrado] = useState<string | null>(null);
+  const [mostrarFiltros, setMostrarFiltros] = useState(false);
   
   // Animation refs
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  const listItemAnims = useRef<Animated.Value[]>([]).current;
+  const filterSlideAnim = useRef(new Animated.Value(-100)).current;
   
   useEffect(() => {
     const loadShoppingList = async () => {
@@ -89,6 +101,11 @@ const ShoppingListScreen: React.FC<ShoppingListScreenProps> = ({ navigation }) =
           setProdutos(produtosDetalhados);
           setProdutosOriginais(produtosDetalhados);
           
+          // Preparar animações para cada item
+          produtosDetalhados.forEach(() => {
+            listItemAnims.push(new Animated.Value(0));
+          });
+          
           // Extrair lista de fornecedores únicos
           const fornecedores = [...new Set(
             produtosDetalhados
@@ -110,14 +127,25 @@ const ShoppingListScreen: React.FC<ShoppingListScreenProps> = ({ navigation }) =
         Animated.parallel([
           Animated.timing(fadeAnim, {
             toValue: 1,
-            duration: 400,
+            duration: 500,
             useNativeDriver: true,
           }),
           Animated.timing(slideAnim, {
             toValue: 0,
-            duration: 400,
+            duration: 500,
             useNativeDriver: true,
-          })
+          }),
+          Animated.stagger(
+            50,
+            listItemAnims.map(anim => 
+              Animated.spring(anim, {
+                toValue: 1,
+                friction: 8,
+                tension: 50,
+                useNativeDriver: true,
+              })
+            )
+          )
         ]).start();
         
       } catch (error) {
@@ -131,42 +159,31 @@ const ShoppingListScreen: React.FC<ShoppingListScreenProps> = ({ navigation }) =
     loadShoppingList();
   }, []);
   
-  // Atualizar filtro de produtos quando o texto de busca mudar
+  // Atualizar filtro de produtos quando os critérios mudarem
   useEffect(() => {
-    if (searchText.trim() === '') {
-      // Se não há texto de busca, mostrar todos os produtos originais
-      setProdutos(produtosOriginais);
-    } else {
-      // Filtrar produtos pelo texto de busca
-      const filtered = produtosOriginais.filter(produto => 
+    let filteredProducts = [...produtosOriginais];
+    
+    // Filtrar por texto de busca
+    if (searchText.trim() !== '') {
+      filteredProducts = filteredProducts.filter(produto => 
         produto.nome.toLowerCase().includes(searchText.toLowerCase()) ||
         produto.codigo.toLowerCase().includes(searchText.toLowerCase()) ||
         (produto.fornecedor && produto.fornecedor.toLowerCase().includes(searchText.toLowerCase()))
       );
-      setProdutos(filtered);
     }
-  }, [searchText, produtosOriginais, mostrarSelecionados]);
-  
-  // Atualizar quando o toggle de selecionados mudar
-  useEffect(() => {
+    
+    // Filtrar por selecionados
     if (mostrarSelecionados) {
-      // Mostrar apenas produtos selecionados
-      const filtered = produtosOriginais.filter(produto => produto.selecionado);
-      setProdutos(filtered);
-    } else {
-      // Aplicar apenas o filtro de texto
-      if (searchText.trim() === '') {
-        setProdutos(produtosOriginais);
-      } else {
-        const filtered = produtosOriginais.filter(produto => 
-          produto.nome.toLowerCase().includes(searchText.toLowerCase()) ||
-          produto.codigo.toLowerCase().includes(searchText.toLowerCase()) ||
-          (produto.fornecedor && produto.fornecedor.toLowerCase().includes(searchText.toLowerCase()))
-        );
-        setProdutos(filtered);
-      }
+      filteredProducts = filteredProducts.filter(produto => produto.selecionado);
     }
-  }, [mostrarSelecionados, produtosOriginais, searchText]);
+    
+    // Filtrar por fornecedor
+    if (fornecedorFiltrado) {
+      filteredProducts = filteredProducts.filter(produto => produto.fornecedor === fornecedorFiltrado);
+    }
+    
+    setProdutos(filteredProducts);
+  }, [searchText, produtosOriginais, mostrarSelecionados, fornecedorFiltrado]);
   
   // Calcular valor total estimado
   const calcularTotalEstimado = (produtosLista: ProdutoListaCompras[]) => {
@@ -344,143 +361,318 @@ const ShoppingListScreen: React.FC<ShoppingListScreenProps> = ({ navigation }) =
     }
   };
   
-  // Renderizar item da lista
-  const renderItem = ({ item }: { item: ProdutoListaCompras }) => (
-    <Animated.View style={{
-      opacity: fadeAnim,
-      transform: [{ translateY: slideAnim }]
-    }}>
-      <View style={[
-        styles.itemContainer,
-        { backgroundColor: COLORS.card }
-      ]}>
-        <TouchableOpacity
-          style={[
-            styles.checkboxContainer,
-            { borderColor: getUrgenciaCor(item.urgencia) }
-          ]}
-          onPress={() => toggleProdutoSelecionado(item.id)}
-        >
-          <View style={[
-            styles.checkbox,
-            item.selecionado && { 
-              backgroundColor: getUrgenciaCor(item.urgencia),
-              borderColor: getUrgenciaCor(item.urgencia)
-            }
-          ]}>
-            {item.selecionado && (
-              <Text style={styles.checkmark}>✓</Text>
-            )}
-          </View>
-        </TouchableOpacity>
-        
-        <View style={styles.itemInfo}>
-          <Text style={[styles.itemName, { color: COLORS.text }]}>{item.nome}</Text>
-          <Text style={[styles.itemCode, { color: COLORS.primary }]}>{item.codigo}</Text>
-          
-          {item.fornecedor && (
-            <Text style={[styles.fornecedor, { color: COLORS.textSecondary }]}>
-              Fornecedor: {item.fornecedor}
-            </Text>
-          )}
-          
-          <View style={styles.stockInfo}>
-            <Text style={[styles.stockText, { color: COLORS.textSecondary }]}>
-              Estoque atual: {item.quantidadeAtual} un
-            </Text>
-            
-            <Text style={[
-              styles.urgenciaText,
-              { color: getUrgenciaCor(item.urgencia) }
-            ]}>
-              {item.urgencia === 'alta' ? 'Urgente' : 
-               item.urgencia === 'media' ? 'Médio' : 'Baixo'}
-            </Text>
-          </View>
+  // Toggle filtros com animação
+  const toggleFiltros = () => {
+    if (mostrarFiltros) {
+      // Esconder filtros
+      Animated.timing(filterSlideAnim, {
+        toValue: -100,
+        duration: 300,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.ease),
+      }).start(() => setMostrarFiltros(false));
+    } else {
+      // Mostrar filtros
+      setMostrarFiltros(true);
+      Animated.timing(filterSlideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.ease),
+      }).start();
+    }
+  };
+  
+  // Renderizar painel de filtros
+  const renderFiltrosPanel = () => {
+    if (!mostrarFiltros) return null;
+    
+    return (
+      <Animated.View 
+        style={[
+          styles.filtrosPanel,
+          { 
+            backgroundColor: COLORS.card,
+            transform: [{ translateY: filterSlideAnim }],
+            opacity: filterSlideAnim.interpolate({
+              inputRange: [-100, 0],
+              outputRange: [0, 1],
+            })
+          }
+        ]}
+      >
+        <View style={styles.filtrosPanelHeader}>
+          <MaterialIcons name="filter-list" size={20} color={COLORS.primary} />
+          <Text style={[styles.filtrosPanelTitle, { color: COLORS.text }]}>Filtros</Text>
         </View>
         
-        <View style={styles.quantityControls}>
-          <View style={styles.quantityRow}>
-            <TouchableOpacity
-              style={[styles.quantityButton, { backgroundColor: COLORS.error }]}
-              onPress={() => {
-                const novaQuantidade = Math.max(1, (item.quantidade || item.quantidadeRecomendada) - 1);
-                atualizarQuantidade(item.id, novaQuantidade);
-              }}
-            >
-              <Text style={styles.quantityButtonText}>-</Text>
-            </TouchableOpacity>
-            
-            <TextInput
-              style={[
-                styles.quantityInput,
-                { 
-                  backgroundColor: COLORS.ultraLightGrey,
-                  borderColor: COLORS.lightGrey,
-                  color: COLORS.text
-                }
-              ]}
-              value={String(item.quantidade || item.quantidadeRecomendada)}
-              onChangeText={(text) => {
-                const quantidade = parseInt(text);
-                if (!isNaN(quantidade) && quantidade > 0) {
-                  atualizarQuantidade(item.id, quantidade);
-                }
-              }}
-              keyboardType="numeric"
+        <View style={styles.filtrosPanelContent}>
+          <View style={styles.filtroItem}>
+            <Text style={[styles.filtroLabel, { color: COLORS.text }]}>Mostrar apenas selecionados</Text>
+            <Switch
+              value={mostrarSelecionados}
+              onValueChange={setMostrarSelecionados}
+              trackColor={{ false: "#cccccc", true: COLORS.primaryLight }}
+              thumbColor={mostrarSelecionados ? COLORS.primary : "#f4f3f4"}
             />
-            
-            <TouchableOpacity
-              style={[styles.quantityButton, { backgroundColor: COLORS.success }]}
-              onPress={() => {
-                const novaQuantidade = (item.quantidade || item.quantidadeRecomendada) + 1;
-                atualizarQuantidade(item.id, novaQuantidade);
-              }}
-            >
-              <Text style={styles.quantityButtonText}>+</Text>
-            </TouchableOpacity>
           </View>
           
-          {mostraPrecos && (
-            <View style={styles.priceRow}>
-              <Text style={[styles.priceLabel, { color: COLORS.textSecondary }]}>R$</Text>
-              <TextInput
-                style={[
-                  styles.priceInput,
-                  { 
-                    backgroundColor: COLORS.ultraLightGrey,
-                    borderColor: COLORS.lightGrey,
-                    color: COLORS.text
-                  }
-                ]}
-                value={String(item.precoEstimado || '')}
-                onChangeText={(text) => {
-                  // Substituir vírgula por ponto
-                  const cleanedText = text.replace(',', '.');
-                  const preco = parseFloat(cleanedText);
-                  if (!isNaN(preco) && preco >= 0) {
-                    atualizarPrecoEstimado(item.id, preco);
-                  }
-                }}
-                keyboardType="numeric"
-                placeholder="0.00"
-              />
+          <View style={styles.filtroItem}>
+            <Text style={[styles.filtroLabel, { color: COLORS.text }]}>Mostrar preços</Text>
+            <Switch
+              value={mostraPrecos}
+              onValueChange={setMostraPrecos}
+              trackColor={{ false: "#cccccc", true: COLORS.primaryLight }}
+              thumbColor={mostraPrecos ? COLORS.primary : "#f4f3f4"}
+            />
+          </View>
+          
+          {fornecedoresList.length > 0 && (
+            <View style={styles.filtroFornecedores}>
+              <Text style={[styles.filtroLabel, { color: COLORS.text, marginBottom: 10 }]}>Filtrar por fornecedor:</Text>
+              
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.fornecedoresList}>
+                <TouchableOpacity
+                  style={[
+                    styles.fornecedorChip,
+                    !fornecedorFiltrado && styles.fornecedorChipActive,
+                    { borderColor: COLORS.primary }
+                  ]}
+                  onPress={() => setFornecedorFiltrado(null)}
+                >
+                  <Text style={[
+                    styles.fornecedorChipText,
+                    !fornecedorFiltrado && { color: COLORS.primary, fontWeight: 'bold' }
+                  ]}>
+                    Todos
+                  </Text>
+                </TouchableOpacity>
+                
+                {fornecedoresList.map((fornecedor, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.fornecedorChip,
+                      fornecedorFiltrado === fornecedor && styles.fornecedorChipActive,
+                      { borderColor: COLORS.primary }
+                    ]}
+                    onPress={() => setFornecedorFiltrado(fornecedorFiltrado === fornecedor ? null : fornecedor)}
+                  >
+                    <Text style={[
+                      styles.fornecedorChipText,
+                      fornecedorFiltrado === fornecedor && { color: COLORS.primary, fontWeight: 'bold' }
+                    ]}>
+                      {fornecedor}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
           )}
-          
-          {mostraPrecos && item.precoEstimado && item.precoEstimado > 0 && (
-            <Text style={[styles.totalValue, { color: COLORS.primary }]}>
-              Total: R$ {((item.quantidade || item.quantidadeRecomendada) * item.precoEstimado).toFixed(2)}
-            </Text>
-          )}
         </View>
-      </View>
-    </Animated.View>
-  );
+        
+        <TouchableOpacity
+          style={[styles.fecharFiltrosButton, { backgroundColor: COLORS.lightGrey }]}
+          onPress={toggleFiltros}
+        >
+          <Text style={[styles.fecharFiltrosText, { color: COLORS.text }]}>Fechar</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
+  
+  // Renderizar item da lista
+  const renderItem = ({ item, index }: { item: ProdutoListaCompras, index: number }) => {
+    // Usar animação existente para este item ou criar nova
+    const itemAnim = index < listItemAnims.length 
+      ? listItemAnims[index] 
+      : new Animated.Value(1);
+      
+    return (
+      <Animated.View style={{
+        opacity: itemAnim,
+        transform: [
+          { 
+            translateY: itemAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [30, 0]
+            }) 
+          }
+        ]
+      }}>
+        <View style={[
+          styles.itemCard,
+          { backgroundColor: COLORS.card }
+        ]}>
+          <View style={styles.itemCardHeader}>
+            <TouchableOpacity
+              style={[
+                styles.checkboxContainer,
+                { borderColor: getUrgenciaCor(item.urgencia) }
+              ]}
+              onPress={() => toggleProdutoSelecionado(item.id)}
+            >
+              <View style={[
+                styles.checkbox,
+                item.selecionado && { 
+                  backgroundColor: getUrgenciaCor(item.urgencia),
+                  borderColor: getUrgenciaCor(item.urgencia)
+                }
+              ]}>
+                {item.selecionado && (
+                  <MaterialIcons name="check" size={12} color="#FFFFFF" />
+                )}
+              </View>
+            </TouchableOpacity>
+            
+            <View style={styles.itemInfo}>
+              <Text style={[styles.itemName, { color: COLORS.text }]}>{item.nome}</Text>
+              <View style={styles.itemMetaInfo}>
+                <View style={styles.codigoContainer}>
+                  <MaterialIcons name="qr-code" size={12} color={COLORS.primary} />
+                  <Text style={[styles.codigoText, { color: COLORS.primary }]}>{item.codigo}</Text>
+                </View>
+                
+                <View style={[
+                  styles.urgenciaTag,
+                  { backgroundColor: getUrgenciaCor(item.urgencia) + '30' }
+                ]}>
+                  <MaterialIcons 
+                    name={
+                      item.urgencia === 'alta' ? "error" : 
+                      item.urgencia === 'media' ? "warning" : "check-circle"
+                    } 
+                    size={12} 
+                    color={getUrgenciaCor(item.urgencia)} 
+                  />
+                  <Text style={[styles.urgenciaText, { color: getUrgenciaCor(item.urgencia) }]}>
+                    {item.urgencia === 'alta' ? 'Urgente' : 
+                     item.urgencia === 'media' ? 'Médio' : 'Baixo'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+          
+          <View style={styles.itemCardBody}>
+            <View style={styles.estoqueInfo}>
+              <View style={styles.estoqueAtual}>
+                <Text style={[styles.estoqueLabel, { color: COLORS.textSecondary }]}>
+                  Estoque atual:
+                </Text>
+                <Text style={[styles.estoqueValue, { color: COLORS.text }]}>
+                  {item.quantidadeAtual} unid.
+                </Text>
+              </View>
+              
+              {item.fornecedor && (
+                <View style={styles.fornecedorInfo}>
+                  <MaterialIcons name="business" size={12} color={COLORS.textSecondary} />
+                  <Text style={[styles.fornecedorText, { color: COLORS.textSecondary }]}>
+                    {item.fornecedor}
+                  </Text>
+                </View>
+              )}
+            </View>
+            
+            <View style={styles.quantityContainer}>
+              <Text style={[styles.quantityLabel, { color: COLORS.textSecondary }]}>
+                Quantidade a comprar:
+              </Text>
+              <View style={styles.quantityControls}>
+                <TouchableOpacity
+                  style={[styles.quantityButton, { backgroundColor: COLORS.error }]}
+                  onPress={() => {
+                    const novaQuantidade = Math.max(1, (item.quantidade || item.quantidadeRecomendada) - 1);
+                    atualizarQuantidade(item.id, novaQuantidade);
+                  }}
+                >
+                  <MaterialIcons name="remove" size={16} color="#FFFFFF" />
+                </TouchableOpacity>
+                
+                <TextInput
+                  style={[
+                    styles.quantityInput,
+                    { 
+                      backgroundColor: COLORS.ultraLightGrey,
+                      borderColor: COLORS.lightGrey,
+                      color: COLORS.text
+                    }
+                  ]}
+                  value={String(item.quantidade || item.quantidadeRecomendada)}
+                  onChangeText={(text) => {
+                    const quantidade = parseInt(text);
+                    if (!isNaN(quantidade) && quantidade > 0) {
+                      atualizarQuantidade(item.id, quantidade);
+                    }
+                  }}
+                  keyboardType="numeric"
+                />
+                
+                <TouchableOpacity
+                  style={[styles.quantityButton, { backgroundColor: COLORS.success }]}
+                  onPress={() => {
+                    const novaQuantidade = (item.quantidade || item.quantidadeRecomendada) + 1;
+                    atualizarQuantidade(item.id, novaQuantidade);
+                  }}
+                >
+                  <MaterialIcons name="add" size={16} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            </View>
+            
+            {mostraPrecos && (
+              <View style={styles.precoContainer}>
+                <Text style={[styles.precoLabel, { color: COLORS.textSecondary }]}>
+                  Preço unitário:
+                </Text>
+                <View style={styles.precoInputContainer}>
+                  <Text style={[styles.precoSymbol, { color: COLORS.text }]}>R$</Text>
+                  <TextInput
+                    style={[
+                      styles.precoInput,
+                      { 
+                        backgroundColor: COLORS.ultraLightGrey,
+                        borderColor: COLORS.lightGrey,
+                        color: COLORS.text
+                      }
+                    ]}
+                    value={item.precoEstimado ? item.precoEstimado.toString() : ''}
+                    onChangeText={(text) => {
+                      // Substituir vírgula por ponto
+                      const cleanedText = text.replace(',', '.');
+                      const preco = parseFloat(cleanedText);
+                      if (!isNaN(preco) && preco >= 0) {
+                        atualizarPrecoEstimado(item.id, preco);
+                      }
+                    }}
+                    keyboardType="numeric"
+                    placeholder="0.00"
+                    placeholderTextColor={COLORS.grey}
+                  />
+                </View>
+              </View>
+            )}
+            
+            {mostraPrecos && item.precoEstimado && item.precoEstimado > 0 && (
+              <View style={styles.totalContainer}>
+                <Text style={[styles.totalLabel, { color: COLORS.textSecondary }]}>
+                  Total:
+                </Text>
+                <Text style={[styles.totalValue, { color: COLORS.primary }]}>
+                  R$ {((item.quantidade || item.quantidadeRecomendada) * item.precoEstimado).toFixed(2)}
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Animated.View>
+    );
+  };
 
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: COLORS.background }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: COLORS.background }]}>
         <LinearGradient
           colors={[COLORS.primary, COLORS.primaryDark]}
           start={{ x: 0, y: 0 }}
@@ -501,12 +693,12 @@ const ShoppingListScreen: React.FC<ShoppingListScreenProps> = ({ navigation }) =
             Gerando lista de compras inteligente...
           </Text>
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: COLORS.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: COLORS.background }]}>
       <LinearGradient
         colors={[COLORS.primary, COLORS.primaryDark]}
         start={{ x: 0, y: 0 }}
@@ -523,6 +715,10 @@ const ShoppingListScreen: React.FC<ShoppingListScreenProps> = ({ navigation }) =
       
       {produtos.length === 0 ? (
         <View style={styles.emptyContainer}>
+          <MaterialIcons name="shopping-cart" size={60} color={COLORS.lightGrey} />
+          <Text style={[styles.emptyTitle, { color: COLORS.text }]}>
+            Lista de Compras Vazia
+          </Text>
           <Text style={[styles.emptyText, { color: COLORS.textSecondary }]}>
             Não há produtos recomendados para compra no momento.
           </Text>
@@ -537,7 +733,7 @@ const ShoppingListScreen: React.FC<ShoppingListScreenProps> = ({ navigation }) =
         <>
           <Animated.View 
             style={[
-              styles.filtersContainer,
+              styles.controlBar,
               { 
                 backgroundColor: COLORS.card,
                 opacity: fadeAnim,
@@ -545,45 +741,89 @@ const ShoppingListScreen: React.FC<ShoppingListScreenProps> = ({ navigation }) =
               }
             ]}
           >
-            <TextInput
-              style={[
-                styles.searchInput,
-                { 
-                  backgroundColor: COLORS.ultraLightGrey,
-                  borderColor: COLORS.lightGrey,
-                  color: COLORS.text
-                }
-              ]}
-              value={searchText}
-              onChangeText={setSearchText}
-              placeholder="Buscar produtos..."
-              placeholderTextColor={COLORS.grey}
-            />
+            <View style={styles.searchContainer}>
+              <MaterialIcons name="search" size={20} color={COLORS.grey} style={styles.searchIcon} />
+              <TextInput
+                style={[
+                  styles.searchInput,
+                  { color: COLORS.text }
+                ]}
+                value={searchText}
+                onChangeText={setSearchText}
+                placeholder="Buscar produtos..."
+                placeholderTextColor={COLORS.grey}
+              />
+              {searchText.length > 0 && (
+                <TouchableOpacity
+                  style={styles.clearSearchButton}
+                  onPress={() => setSearchText('')}
+                >
+                  <MaterialIcons name="close" size={20} color={COLORS.grey} />
+                </TouchableOpacity>
+              )}
+            </View>
             
-            <View style={styles.optionsRow}>
-              <View style={styles.switchContainer}>
-                <Text style={[styles.switchLabel, { color: COLORS.text }]}>
-                  Mostrar preços
+            <TouchableOpacity
+              style={[
+                styles.filterButton,
+                mostrarFiltros && { backgroundColor: COLORS.primary }
+              ]}
+              onPress={toggleFiltros}
+            >
+              <MaterialIcons 
+                name="filter-list" 
+                size={24} 
+                color={mostrarFiltros ? COLORS.white : COLORS.primary} 
+              />
+            </TouchableOpacity>
+          </Animated.View>
+          
+          {renderFiltrosPanel()}
+          
+          <Animated.View 
+            style={[
+              styles.statsBar,
+              { 
+                backgroundColor: COLORS.card,
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
+          >
+            <View style={styles.statsItem}>
+              <MaterialIcons name="shopping-basket" size={20} color={COLORS.primary} />
+              <Text style={[styles.statsValue, { color: COLORS.text }]}>
+                {produtosOriginais.filter(p => p.selecionado).length}
+              </Text>
+              <Text style={[styles.statsLabel, { color: COLORS.textSecondary }]}>
+                Itens
+              </Text>
+            </View>
+            
+            {mostraPrecos && (
+              <View style={styles.statsItem}>
+                <MaterialIcons name="attach-money" size={20} color={COLORS.success} />
+                <Text style={[styles.statsValue, { color: COLORS.text }]}>
+                  R$ {totalValorEstimado.toFixed(2)}
                 </Text>
-                <Switch
-                  value={mostraPrecos}
-                  onValueChange={setMostraPrecos}
-                  trackColor={{ false: "#cccccc", true: COLORS.primaryLight }}
-                  thumbColor={mostraPrecos ? COLORS.primary : "#f4f3f4"}
-                />
-              </View>
-              
-              <View style={styles.switchContainer}>
-                <Text style={[styles.switchLabel, { color: COLORS.text }]}>
-                  Selecionados
+                <Text style={[styles.statsLabel, { color: COLORS.textSecondary }]}>
+                  Total
                 </Text>
-                <Switch
-                  value={mostrarSelecionados}
-                  onValueChange={setMostrarSelecionados}
-                  trackColor={{ false: "#cccccc", true: COLORS.primaryLight }}
-                  thumbColor={mostrarSelecionados ? COLORS.primary : "#f4f3f4"}
-                />
               </View>
+            )}
+            
+            <View style={styles.statsItem}>
+              <MaterialIcons 
+                name="business" 
+                size={20} 
+                color={COLORS.info} 
+              />
+              <Text style={[styles.statsValue, { color: COLORS.text }]}>
+                {fornecedoresList.length}
+              </Text>
+              <Text style={[styles.statsLabel, { color: COLORS.textSecondary }]}>
+                Fornecedores
+              </Text>
             </View>
           </Animated.View>
           
@@ -592,56 +832,37 @@ const ShoppingListScreen: React.FC<ShoppingListScreenProps> = ({ navigation }) =
             renderItem={renderItem}
             keyExtractor={item => item.id.toString()}
             contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
           />
           
           <Animated.View 
             style={[
-              styles.totalsContainer,
+              styles.actionsBar,
               { 
                 backgroundColor: COLORS.card,
                 opacity: fadeAnim
               }
             ]}
           >
-            <View style={styles.totalRow}>
-              <Text style={[styles.totalLabel, { color: COLORS.text }]}>
-                Total de itens:
-              </Text>
-              <Text style={[styles.totalCount, { color: COLORS.primary }]}>
-                {produtosOriginais.filter(p => p.selecionado).length} itens
-              </Text>
-            </View>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: COLORS.info }]}
+              onPress={compartilharLista}
+            >
+              <MaterialIcons name="share" size={20} color="#FFFFFF" />
+              <Text style={styles.actionButtonText}>Compartilhar</Text>
+            </TouchableOpacity>
             
-            {mostraPrecos && (
-              <View style={styles.totalRow}>
-                <Text style={[styles.totalLabel, { color: COLORS.text }]}>
-                  Valor estimado:
-                </Text>
-                <Text style={[styles.totalPrice, { color: COLORS.primary }]}>
-                  R$ {totalValorEstimado.toFixed(2)}
-                </Text>
-              </View>
-            )}
-            
-            <View style={styles.actionsContainer}>
-              <TouchableOpacity
-                style={[styles.actionButton, { backgroundColor: COLORS.info }]}
-                onPress={compartilharLista}
-              >
-                <Text style={styles.actionButtonText}>Compartilhar</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.actionButton, { backgroundColor: COLORS.success }]}
-                onPress={salvarLista}
-              >
-                <Text style={styles.actionButtonText}>Salvar Lista</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: COLORS.success }]}
+              onPress={salvarLista}
+            >
+              <MaterialIcons name="save" size={20} color="#FFFFFF" />
+              <Text style={styles.actionButtonText}>Salvar Lista</Text>
+            </TouchableOpacity>
           </Animated.View>
         </>
       )}
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -681,66 +902,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 20,
+    marginBottom: 10,
+  },
   emptyText: {
     fontSize: 16,
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 30,
   },
   emptyButton: {
     paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
     borderRadius: 25,
-  },
-  emptyButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  filtersContainer: {
-    padding: 15,
-    borderRadius: 8,
-    margin: 15,
-    marginBottom: 5,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
+        shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
-        shadowRadius: 4,
+        shadowRadius: 3,
       },
       android: {
         elevation: 3,
       },
     }),
   },
-  searchInput: {
-    height: 40,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    marginBottom: 10,
+  emptyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
-  optionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  switchContainer: {
+  controlBar: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  switchLabel: {
-    marginRight: 8,
-    fontSize: 14,
-  },
-  listContent: {
-    padding: 10,
-    paddingBottom: 20,
-  },
-  itemContainer: {
-    flexDirection: 'row',
-    padding: 15,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 8,
     borderRadius: 12,
-    marginBottom: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -753,6 +955,158 @@ const styles = StyleSheet.create({
       },
     }),
   },
+  searchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: 40,
+    fontSize: 16,
+  },
+  clearSearchButton: {
+    padding: 4,
+  },
+  filterButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+    backgroundColor: '#F0F0F0',
+  },
+  filtrosPanel: {
+    margin: 16,
+    marginTop: 0,
+    borderRadius: 12,
+    padding: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  filtrosPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  filtrosPanelTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  filtrosPanelContent: {
+    marginBottom: 16,
+  },
+  filtroItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  filtroLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  filtroFornecedores: {
+    marginTop: 8,
+  },
+  fornecedoresList: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  fornecedorChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginRight: 8,
+  },
+  fornecedorChipActive: {
+    backgroundColor: '#E3F2FD',
+  },
+  fornecedorChipText: {
+    fontSize: 14,
+  },
+  fecharFiltrosButton: {
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignItems: 'center',
+  },
+  fecharFiltrosText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  statsBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 12,
+    padding: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  statsItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statsValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 4,
+  },
+  statsLabel: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  listContent: {
+    padding: 16,
+    paddingBottom: 100,
+  },
+  itemCard: {
+    borderRadius: 12,
+    marginBottom: 16,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  itemCardHeader: {
+    flexDirection: 'row',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
   checkboxContainer: {
     width: 24,
     height: 24,
@@ -760,8 +1114,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
-    alignSelf: 'center',
+    marginRight: 16,
   },
   checkbox: {
     width: 16,
@@ -771,133 +1124,180 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  checkmark: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
   itemInfo: {
     flex: 1,
-    marginRight: 10,
   },
   itemName: {
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 4,
+    marginBottom: 8,
   },
-  itemCode: {
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  fornecedor: {
-    fontSize: 12,
-    marginBottom: 6,
-  },
-  stockInfo: {
+  itemMetaInfo: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexWrap: 'wrap',
   },
-  stockText: {
+  codigoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 12,
+    marginBottom: 4,
+  },
+  codigoText: {
     fontSize: 12,
+    marginLeft: 4,
+  },
+  urgenciaTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
   },
   urgenciaText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  itemCardBody: {
+    padding: 16,
+  },
+  estoqueInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  estoqueAtual: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  estoqueLabel: {
+    fontSize: 14,
+    marginRight: 4,
+  },
+  estoqueValue: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  fornecedorInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  fornecedorText: {
+    fontSize: 12,
+    marginLeft: 4,
+  },
+  quantityContainer: {
+    marginBottom: 12,
+  },
+  quantityLabel: {
+    fontSize: 14,
+    marginBottom: 8,
   },
   quantityControls: {
-    justifyContent: 'center',
-  },
-  quantityRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   quantityButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.2,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
-  quantityButtonText: {
-    color: '#FFFFFF',
+  quantityInput: {
+    width: 60,
+    height: 36,
+    borderWidth: 1,
+    borderRadius: 8,
+    marginHorizontal: 12,
+    textAlign: 'center',
+    fontSize: 16,
+  },
+  precoContainer: {
+    marginBottom: 12,
+  },
+  precoLabel: {
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  precoInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  precoSymbol: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  precoInput: {
+    width: 100,
+    height: 36,
+    borderWidth: 1,
+    borderRadius: 8,
+    textAlign: 'right',
+    paddingHorizontal: 8,
+    fontSize: 16,
+  },
+  totalContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  totalLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  totalValue: {
     fontSize: 16,
     fontWeight: 'bold',
   },
-  quantityInput: {
-    width: 40,
-    height: 32,
-    borderWidth: 1,
-    borderRadius: 6,
-    textAlign: 'center',
-    marginHorizontal: 8,
-  },
-  priceRow: {
+  actionsBar: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  priceLabel: {
-    fontSize: 14,
-    marginRight: 8,
-  },
-  priceInput: {
-    width: 70,
-    height: 32,
-    borderWidth: 1,
-    borderRadius: 6,
-    textAlign: 'right',
-    paddingHorizontal: 8,
-  },
-  totalValue: {
-    fontSize: 12,
-    marginTop: 5,
-    textAlign: 'right',
-    fontWeight: '600',
-  },
-  totalsContainer: {
-    padding: 15,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    justifyContent: 'space-around',
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
         shadowOffset: { width: 0, height: -3 },
         shadowOpacity: 0.1,
-        shadowRadius: 4,
+        shadowRadius: 5,
       },
       android: {
-        elevation: 4,
+        elevation: 8,
       },
     }),
   },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  totalLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  totalCount: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  totalPrice: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  actionsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 15,
-  },
   actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 12,
-    paddingHorizontal: 30,
+    paddingHorizontal: 24,
     borderRadius: 25,
+    flex: 1,
+    marginHorizontal: 8,
+    justifyContent: 'center',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -914,6 +1314,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+    marginLeft: 8,
   },
 });
 

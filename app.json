@@ -24,7 +24,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/Logo_RLS.png",
+        "foregroundImage": "./assets/Logo_RLS_adaptive.png",
         "backgroundColor": "#1565C0"
       },
       "package": "com.rlsautomacao.estoque",

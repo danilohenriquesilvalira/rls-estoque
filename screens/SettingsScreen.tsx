@@ -22,6 +22,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../contexts/ThemeContext';
 import Header from '../components/Header';
 import ThemeToggle from '../components/ThemeToggle';
+import { MaterialIcons } from '@expo/vector-icons';
 
 type SettingsScreenProps = {
   navigation: NativeStackNavigationProp<any, 'Settings'>;
@@ -45,7 +46,7 @@ const defaultSettings: SettingsType = {
 
 const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const { theme, toggleTheme } = useTheme();
-  const { COLORS, SHADOWS } = theme;
+  const { COLORS } = theme;
   
   const [settings, setSettings] = useState<SettingsType>(defaultSettings);
   const [loading, setLoading] = useState<boolean>(true);
@@ -228,6 +229,8 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
                 RLS AUTOMAÇÃO
               </Text>
             </View>
+            <View style={styles.modalHeaderDecoration1} />
+            <View style={styles.modalHeaderDecoration2} />
           </LinearGradient>
           
           <View style={styles.modalBody}>
@@ -239,32 +242,35 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               O RLS Estoque é um aplicativo para gestão de estoque desenvolvido para a RLS Automação Industrial.
             </Text>
             
-            <Text style={[styles.versionInfo, { color: COLORS.textSecondary }]}>
-              Versão {settings.version}
-            </Text>
+            <View style={[styles.versionInfoContainer, { backgroundColor: COLORS.ultraLightGrey }]}>
+              <MaterialIcons name="info" size={20} color={COLORS.primary} style={styles.versionIcon} />
+              <Text style={[styles.versionInfo, { color: COLORS.textSecondary }]}>
+                Versão {settings.version}
+              </Text>
+            </View>
             
             <View style={styles.contactSection}>
               <Text style={[styles.contactTitle, { color: COLORS.text }]}>
                 Contato
               </Text>
               
-              <TouchableOpacity
-                style={styles.contactButton}
-                onPress={() => Linking.openURL('mailto:contato@rlsautomacao.com.br')}
-              >
-                <Text style={[styles.contactButtonText, { color: COLORS.primary }]}>
-                  contato@rlsautomacao.com.br
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.contactButton}
-                onPress={() => Linking.openURL('tel:+5500000000000')}
-              >
-                <Text style={[styles.contactButtonText, { color: COLORS.primary }]}>
-                  (00) 0000-0000
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.contactButtons}>
+                <TouchableOpacity
+                  style={[styles.contactButton, { backgroundColor: COLORS.primary }]}
+                  onPress={() => Linking.openURL('mailto:contato@rlsautomacao.com.br')}
+                >
+                  <MaterialIcons name="email" size={20} color="#FFFFFF" />
+                  <Text style={styles.contactButtonText}>E-mail</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.contactButton, { backgroundColor: COLORS.primary }]}
+                  onPress={() => Linking.openURL('tel:+5500000000000')}
+                >
+                  <MaterialIcons name="phone" size={20} color="#FFFFFF" />
+                  <Text style={styles.contactButtonText}>Telefone</Text>
+                </TouchableOpacity>
+              </View>
             </View>
             
             <TouchableOpacity
@@ -323,6 +329,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           showBack={true} 
           onBack={() => navigation.goBack()} 
         />
+        
+        {/* Decorative shapes for header gradient, similar to Dashboard */}
+        <View style={styles.headerDecoration1} />
+        <View style={styles.headerDecoration2} />
       </LinearGradient>
       
       <ScrollView 
@@ -340,21 +350,15 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               { translateY: staggerAnimations[0].interpolate({
                 inputRange: [0, 1],
                 outputRange: [20, 0]
-              }) },
-              { scale: staggerAnimations[0].interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.95, 1]
               }) }
             ]
           }
         ]}>
           <View style={styles.sectionHeader}>
+            <MaterialIcons name="palette" size={22} color={COLORS.primary} />
             <Text style={[styles.sectionTitle, { color: COLORS.text }]}>
               Aparência
             </Text>
-            <View style={styles.sectionIcon}>
-              <Text style={styles.sectionIconText}>🎨</Text>
-            </View>
           </View>
           
           <View style={styles.settingRow}>
@@ -375,21 +379,15 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               { translateY: staggerAnimations[1].interpolate({
                 inputRange: [0, 1],
                 outputRange: [20, 0]
-              }) },
-              { scale: staggerAnimations[1].interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.95, 1]
               }) }
             ]
           }
         ]}>
           <View style={styles.sectionHeader}>
+            <MaterialIcons name="settings" size={22} color={COLORS.primary} />
             <Text style={[styles.sectionTitle, { color: COLORS.text }]}>
               Gerais
             </Text>
-            <View style={styles.sectionIcon}>
-              <Text style={styles.sectionIconText}>⚙️</Text>
-            </View>
           </View>
           
           <View style={styles.settingRow}>
@@ -409,7 +407,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             />
           </View>
           
-          <View style={styles.separator} />
+          <View style={[styles.separator, { backgroundColor: COLORS.ultraLightGrey }]} />
           
           <View style={styles.settingRow}>
             <View style={styles.settingLabelContainer}>
@@ -439,21 +437,15 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               { translateY: staggerAnimations[2].interpolate({
                 inputRange: [0, 1],
                 outputRange: [20, 0]
-              }) },
-              { scale: staggerAnimations[2].interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.95, 1]
               }) }
             ]
           }
         ]}>
           <View style={styles.sectionHeader}>
+            <MaterialIcons name="inventory" size={22} color={COLORS.primary} />
             <Text style={[styles.sectionTitle, { color: COLORS.text }]}>
               Produtos
             </Text>
-            <View style={styles.sectionIcon}>
-              <Text style={styles.sectionIconText}>📦</Text>
-            </View>
           </View>
           
           <View style={styles.settingRow}>
@@ -473,7 +465,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             />
           </View>
           
-          <View style={styles.separator} />
+          <View style={[styles.separator, { backgroundColor: COLORS.ultraLightGrey }]} />
           
           <View style={styles.settingRow}>
             <View style={styles.settingLabelContainer}>
@@ -503,21 +495,15 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               { translateY: staggerAnimations[3].interpolate({
                 inputRange: [0, 1],
                 outputRange: [20, 0]
-              }) },
-              { scale: staggerAnimations[3].interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.95, 1]
               }) }
             ]
           }
         ]}>
           <View style={styles.sectionHeader}>
+            <MaterialIcons name="storage" size={22} color={COLORS.primary} />
             <Text style={[styles.sectionTitle, { color: COLORS.text }]}>
               Dados
             </Text>
-            <View style={styles.sectionIcon}>
-              <Text style={styles.sectionIconText}>💾</Text>
-            </View>
           </View>
           
           <TouchableOpacity
@@ -530,6 +516,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               end={{ x: 1, y: 0 }}
               style={styles.dangerActionGradient}
             >
+              <MaterialIcons name="delete" size={22} color="#FFFFFF" style={styles.actionButtonIcon} />
               <Text style={styles.dangerActionText}>
                 Limpar Todos os Dados
               </Text>
@@ -549,6 +536,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               end={{ x: 1, y: 0 }}
               style={styles.actionGradient}
             >
+              <MaterialIcons name="cloud-download" size={22} color="#FFFFFF" style={styles.actionButtonIcon} />
               <Text style={styles.actionText}>
                 Exportar Dados (Em breve)
               </Text>
@@ -566,21 +554,15 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               { translateY: staggerAnimations[3].interpolate({
                 inputRange: [0, 1],
                 outputRange: [20, 0]
-              }) },
-              { scale: staggerAnimations[3].interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.95, 1]
               }) }
             ]
           }
         ]}>
           <View style={styles.sectionHeader}>
+            <MaterialIcons name="dns" size={22} color={COLORS.primary} />
             <Text style={[styles.sectionTitle, { color: COLORS.text }]}>
               Servidor
             </Text>
-            <View style={styles.sectionIcon}>
-              <Text style={styles.sectionIconText}>🖥️</Text>
-            </View>
           </View>
           
           <TouchableOpacity
@@ -593,6 +575,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               end={{ x: 1, y: 0 }}
               style={styles.actionGradient}
             >
+              <MaterialIcons name="settings" size={22} color="#FFFFFF" style={styles.actionButtonIcon} />
               <Text style={styles.actionText}>
                 Configurar Servidor PostgreSQL
               </Text>
@@ -609,6 +592,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               end={{ x: 1, y: 0 }}
               style={styles.actionGradient}
             >
+              <MaterialIcons name="network-check" size={22} color="#FFFFFF" style={styles.actionButtonIcon} />
               <Text style={styles.actionText}>
                 Diagnóstico de Conexão
               </Text>
@@ -626,45 +610,47 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               { translateY: staggerAnimations[4].interpolate({
                 inputRange: [0, 1],
                 outputRange: [20, 0]
-              }) },
-              { scale: staggerAnimations[4].interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.95, 1]
               }) }
             ]
           }
         ]}>
           <View style={styles.sectionHeader}>
+            <MaterialIcons name="info" size={22} color={COLORS.primary} />
             <Text style={[styles.sectionTitle, { color: COLORS.text }]}>
               Sobre
             </Text>
-            <View style={styles.sectionIcon}>
-              <Text style={styles.sectionIconText}>ℹ️</Text>
-            </View>
           </View>
           
           <TouchableOpacity
-            style={styles.actionButton}
+            style={styles.infoButton}
             onPress={() => setAboutModalVisible(true)}
           >
-            <View style={styles.infoActionButton}>
-              <Text style={[styles.infoActionText, { color: COLORS.primary }]}>
+            <View style={styles.infoButtonContent}>
+              <MaterialIcons name="info-outline" size={22} color={COLORS.primary} />
+              <Text style={[styles.infoButtonText, { color: COLORS.text }]}>
                 Sobre o Aplicativo
               </Text>
+              <MaterialIcons name="chevron-right" size={22} color={COLORS.grey} />
             </View>
           </TouchableOpacity>
           
+          <View style={styles.separator} />
+          
           <TouchableOpacity
-            style={styles.actionButton}
+            style={styles.infoButton}
             onPress={() => Alert.alert(
               'RLS Automação Industrial',
               'Aplicativo de gestão de estoque para a RLS Automação Industrial.\n\nVersão: ' + settings.version
             )}
           >
-            <View style={styles.infoActionButton}>
-              <Text style={[styles.infoActionText, { color: COLORS.primary }]}>
+            <View style={styles.infoButtonContent}>
+              <MaterialIcons name="new-releases" size={22} color={COLORS.primary} />
+              <Text style={[styles.infoButtonText, { color: COLORS.text }]}>
                 Versão do Aplicativo
               </Text>
+              <View style={[styles.versionBadge, { backgroundColor: COLORS.primary }]}>
+                <Text style={styles.versionBadgeText}>{settings.version}</Text>
+              </View>
             </View>
           </TouchableOpacity>
         </Animated.View>
@@ -682,6 +668,8 @@ const styles = StyleSheet.create({
   header: {
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
+    position: 'relative',
+    overflow: 'hidden',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -693,6 +681,24 @@ const styles = StyleSheet.create({
         elevation: 5,
       },
     }),
+  },
+  headerDecoration1: {
+    position: 'absolute',
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    top: -30,
+    right: -30,
+  },
+  headerDecoration2: {
+    position: 'absolute',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    bottom: -40,
+    left: 20,
   },
   scrollContainer: {
     flex: 1,
@@ -728,27 +734,16 @@ const styles = StyleSheet.create({
   },
   sectionHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0,0,0,0.05)',
-  },
-  sectionIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sectionIconText: {
-    fontSize: 18,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
+    marginLeft: 10,
   },
   settingRow: {
     flexDirection: 'row',
@@ -775,7 +770,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
   },
   actionButton: {
-    margin: 16,
+    margin: 12,
     marginBottom: 8,
     borderRadius: 12,
     overflow: 'hidden',
@@ -794,32 +789,52 @@ const styles = StyleSheet.create({
   actionGradient: {
     paddingVertical: 14,
     paddingHorizontal: 16,
+    flexDirection: 'row',
     alignItems: 'center',
+  },
+  actionButtonIcon: {
+    marginRight: 10,
   },
   actionText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+    flex: 1,
   },
   dangerActionGradient: {
     paddingVertical: 14,
     paddingHorizontal: 16,
+    flexDirection: 'row',
     alignItems: 'center',
   },
   dangerActionText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+    flex: 1,
   },
-  infoActionButton: {
-    paddingVertical: 14,
+  infoButton: {
     paddingHorizontal: 16,
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.03)',
+    paddingVertical: 14,
   },
-  infoActionText: {
+  infoButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  infoButtonText: {
     fontSize: 16,
-    fontWeight: '500',
+    marginLeft: 10,
+    flex: 1,
+  },
+  versionBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 15,
+  },
+  versionBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   
   // Modal styles
@@ -849,6 +864,26 @@ const styles = StyleSheet.create({
   modalHeader: {
     paddingVertical: 20,
     alignItems: 'center',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  modalHeaderDecoration1: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    top: -50,
+    right: -20,
+  },
+  modalHeaderDecoration2: {
+    position: 'absolute',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    bottom: -40,
+    left: -20,
   },
   modalBody: {
     padding: 20,
@@ -873,9 +908,19 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     lineHeight: 24,
   },
+  versionInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginBottom: 20,
+  },
+  versionIcon: {
+    marginRight: 8,
+  },
   versionInfo: {
     fontSize: 14,
-    marginBottom: 24,
   },
   contactSection: {
     width: '100%',
@@ -887,16 +932,29 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 12,
   },
+  contactButtons: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    width: '100%',
+  },
   contactButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    marginHorizontal: 6,
   },
   contactButtonText: {
-    fontSize: 16,
+    color: 'white',
+    fontSize: 15,
+    fontWeight: '500',
+    marginLeft: 6,
   },
   closeButton: {
     paddingVertical: 12,
-    paddingHorizontal: 30,
-    borderRadius: 8,
+    paddingHorizontal: 36,
+    borderRadius: 25,
   },
   closeButtonText: {
     color: 'white',

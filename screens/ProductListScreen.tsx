@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -13,13 +13,17 @@ import {
   StatusBar,
   Animated,
   Dimensions,
-  Easing
+  Easing,
+  Image,
+  Switch,
+  ToastAndroid
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getProdutos, verificarConexao, getStatusConexao } from '../services/api';
 import Header from '../components/Header';
 import FloatingActionButton from '../components/FloatingActionButton';
+import { MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
 
 // Definition of navigation props type
 type ProductListScreenProps = {
@@ -40,6 +44,9 @@ interface Produto {
   data_criacao?: string;
   data_atualizacao?: string;
 }
+
+// Filtro group by
+type GroupBy = null | 'fornecedor' | 'localizacao';
 
 // Define theme colors
 const COLORS = {
@@ -62,6 +69,24 @@ const COLORS = {
 // Window dimensions
 const windowWidth = Dimensions.get('window').width;
 
+// Formatar data
+const formatarData = (dataString?: string): string => {
+  if (!dataString) return 'N/A';
+  
+  try {
+    const data = new Date(dataString);
+    return data.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (error) {
+    return 'Data inválida';
+  }
+};
+
 export default function ProductListScreen({ navigation }: ProductListScreenProps) {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [filteredProdutos, setFilteredProdutos] = useState<Produto[]>([]);
@@ -71,11 +96,18 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
   const [sortOrder, setSortOrder] = useState<'nome' | 'codigo' | 'quantidade'>('nome');
   const [sortAscending, setSortAscending] = useState(true);
   const [isOnline, setIsOnline] = useState(getStatusConexao());
+  const [showSearch, setShowSearch] = useState(false);
+  const [showLowStock, setShowLowStock] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [groupBy, setGroupBy] = useState<GroupBy>(null);
+  const [showFilterOptions, setShowFilterOptions] = useState(false);
   
   // Animation references
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const searchBarAnim = useRef(new Animated.Value(0)).current;
   const listItemAnims = useRef<Animated.Value[]>([]).current;
+  const searchExpandAnim = useRef(new Animated.Value(0)).current;
+  const filterOptionsAnim = useRef(new Animated.Value(0)).current;
 
   // Check connection to server
   useEffect(() => {
@@ -85,7 +117,56 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
     };
     
     checkConnection();
+
+    // Verificar conexão a cada 30 segundos
+    const interval = setInterval(checkConnection, 30000);
+    return () => clearInterval(interval);
   }, []);
+
+  // Toggle search bar
+  const toggleSearchBar = () => {
+    if (showSearch) {
+      // Ocultar a barra de pesquisa
+      Animated.timing(searchExpandAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: false,
+      }).start(() => {
+        setShowSearch(false);
+        setSearchText('');
+      });
+    } else {
+      // Mostrar a barra de pesquisa
+      setShowSearch(true);
+      Animated.timing(searchExpandAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: false,
+      }).start();
+    }
+  };
+
+  // Toggle filter options
+  const toggleFilterOptions = () => {
+    if (showFilterOptions) {
+      // Ocultar opções de filtro
+      Animated.timing(filterOptionsAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: false,
+      }).start(() => {
+        setShowFilterOptions(false);
+      });
+    } else {
+      // Mostrar opções de filtro
+      setShowFilterOptions(true);
+      Animated.timing(filterOptionsAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: false,
+      }).start();
+    }
+  };
 
   // Function to load products
   const loadProdutos = async () => {
@@ -95,6 +176,7 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
       // Use API function to fetch products
       const produtosData = await getProdutos();
       setProdutos(produtosData);
+      setLastUpdate(new Date());
       
       // Create animation values for each product
       if (listItemAnims.length !== produtosData.length) {
@@ -104,7 +186,7 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
         });
       }
       
-      applyFiltersAndSorts(produtosData, searchText, sortOrder, sortAscending);
+      applyFiltersAndSorts(produtosData, searchText, sortOrder, sortAscending, showLowStock, groupBy);
       
       // Check connection status again
       const connected = await verificarConexao();
@@ -137,8 +219,12 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
         )
       ]).start();
       
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Produtos atualizados', ToastAndroid.SHORT);
+      }
+      
     } catch (e) {
-      console.error("Error loading products", e);
+      console.error("Erro ao carregar produtos", e);
       Alert.alert("Erro", "Não foi possível carregar a lista de produtos");
     } finally {
       setLoading(false);
@@ -151,9 +237,11 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
     produtosList: Produto[], 
     search: string, 
     order: 'nome' | 'codigo' | 'quantidade', 
-    ascending: boolean
+    ascending: boolean,
+    onlyLowStock: boolean,
+    groupByField: GroupBy
   ) => {
-    // First apply search
+    // First apply search and low stock filter
     let result = produtosList;
     
     if (search.trim() !== '') {
@@ -162,8 +250,18 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
         item => 
           item.nome.toLowerCase().includes(searchLower) || 
           item.codigo.toLowerCase().includes(searchLower) ||
-          (item.descricao && item.descricao.toLowerCase().includes(searchLower))
+          (item.descricao && item.descricao.toLowerCase().includes(searchLower)) ||
+          (item.fornecedor && item.fornecedor.toLowerCase().includes(searchLower)) ||
+          (item.localizacao && item.localizacao.toLowerCase().includes(searchLower))
       );
+    }
+    
+    // Filter low stock if enabled
+    if (onlyLowStock) {
+      result = result.filter(item => {
+        const minQuantity = item.quantidade_minima || 5;
+        return item.quantidade <= minQuantity;
+      });
     }
     
     // Then apply sorting
@@ -186,6 +284,33 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
     setFilteredProdutos(result);
   };
 
+  // Aplicando groupBy
+  const groupedProdutos = useMemo(() => {
+    if (!groupBy) return null;
+    
+    const groups: { [key: string]: Produto[] } = {};
+    
+    filteredProdutos.forEach(produto => {
+      const groupValue = groupBy === 'fornecedor' 
+        ? (produto.fornecedor || 'Sem fornecedor')
+        : (produto.localizacao || 'Sem localização');
+      
+      if (!groups[groupValue]) {
+        groups[groupValue] = [];
+      }
+      
+      groups[groupValue].push(produto);
+    });
+    
+    // Converter em array para o FlatList
+    return Object.entries(groups)
+      .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+      .map(([key, items]) => ({
+        title: key,
+        data: items
+      }));
+  }, [filteredProdutos, groupBy]);
+
   // Effect to load products when component mounts
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
@@ -197,8 +322,8 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
 
   // Effect to apply filters when criteria change
   useEffect(() => {
-    applyFiltersAndSorts(produtos, searchText, sortOrder, sortAscending);
-  }, [searchText, sortOrder, sortAscending]);
+    applyFiltersAndSorts(produtos, searchText, sortOrder, sortAscending, showLowStock, groupBy);
+  }, [searchText, sortOrder, sortAscending, showLowStock, groupBy]);
 
   // Function to update sort order
   const updateSortOrder = (order: 'nome' | 'codigo' | 'quantidade') => {
@@ -212,10 +337,35 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
     }
   };
 
-  // Function to display sort icon
-  const getSortIcon = (field: 'nome' | 'codigo' | 'quantidade') => {
-    if (sortOrder !== field) return '⋯';
-    return sortAscending ? '↑' : '↓';
+  // Function to get sort icon name
+  const getSortIconName = (field: 'nome' | 'codigo' | 'quantidade') => {
+    if (sortOrder !== field) return null;
+    return sortAscending ? "arrow-upward" : "arrow-downward";
+  };
+
+  // Function to calculate stock status
+  const getStockStatus = (quantidade: number, quantidade_minima?: number) => {
+    const min = quantidade_minima || 5;
+    if (quantidade <= 0) return "empty";
+    if (quantidade < min) return "low";
+    if (quantidade < min * 2) return "medium";
+    return "high";
+  };
+
+  // Function to get stock icon and color
+  const getStockInfo = (status: string) => {
+    switch (status) {
+      case "empty":
+        return { icon: "error-outline", color: COLORS.error, bgColor: '#FFEBEE', borderColor: '#FFCDD2' };
+      case "low":
+        return { icon: "warning", color: COLORS.warning, bgColor: '#FFF3E0', borderColor: '#FFE0B2' };
+      case "medium":
+        return { icon: "check-circle-outline", color: COLORS.info, bgColor: '#E3F2FD', borderColor: '#BBDEFB' };
+      case "high":
+        return { icon: "check-circle", color: COLORS.success, bgColor: '#E8F5E9', borderColor: '#C8E6C9' };
+      default:
+        return { icon: "help", color: COLORS.grey, bgColor: COLORS.lightGrey, borderColor: COLORS.grey };
+    }
   };
 
   // Render loading indicator
@@ -238,7 +388,7 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
 
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Carregando produtos...</Text>
+          <Text style={styles.loadingText}>A carregar produtos...</Text>
         </View>
       </View>
     );
@@ -246,7 +396,7 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
 
   // Render message when there are no products
   const renderEmptyList = () => {
-    if (searchText) {
+    if (searchText || showLowStock || groupBy) {
       return (
         <Animated.View 
           style={[
@@ -254,14 +404,20 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
             { opacity: fadeAnim }
           ]}
         >
+          <MaterialIcons name="search-off" size={64} color={COLORS.grey} />
           <Text style={styles.emptyText}>
-            Nenhum produto encontrado para "{searchText}"
+            Nenhum produto encontrado com os filtros aplicados
           </Text>
           <TouchableOpacity
             style={styles.clearButton}
-            onPress={() => setSearchText('')}
+            onPress={() => {
+              setSearchText('');
+              setShowLowStock(false);
+              setGroupBy(null);
+            }}
           >
-            <Text style={styles.clearButtonText}>Limpar Pesquisa</Text>
+            <MaterialIcons name="clear" size={16} color={COLORS.white} />
+            <Text style={styles.clearButtonText}>Limpar Filtros</Text>
           </TouchableOpacity>
         </Animated.View>
       );
@@ -274,16 +430,300 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
           { opacity: fadeAnim }
         ]}
       >
+        <MaterialIcons name="inventory" size={64} color={COLORS.grey} />
         <Text style={styles.emptyText}>Nenhum produto cadastrado</Text>
         <TouchableOpacity
           style={styles.addButton}
           onPress={() => navigation.navigate('AddProduct')}
         >
+          <MaterialIcons name="add" size={18} color={COLORS.white} />
           <Text style={styles.buttonText}>Adicionar Produto</Text>
         </TouchableOpacity>
       </Animated.View>
     );
   };
+
+  // Render a group header
+  const renderGroupHeader = (title: string, count: number) => (
+    <View style={styles.groupHeader}>
+      <MaterialIcons 
+        name={groupBy === 'fornecedor' ? "business" : "place"} 
+        size={18} 
+        color={COLORS.primary} 
+      />
+      <Text style={styles.groupTitle}>{title}</Text>
+      <View style={styles.groupCount}>
+        <Text style={styles.groupCountText}>{count}</Text>
+      </View>
+    </View>
+  );
+
+  // Render list header
+  const renderListHeader = () => (
+    <>
+      {!isOnline && (
+        <Animated.View 
+          style={[
+            styles.offlineBanner,
+            { opacity: fadeAnim }
+          ]}
+        >
+          <MaterialIcons name="cloud-off" size={18} color={COLORS.white} />
+          <Text style={styles.offlineText}>Modo Offline - Exibindo dados locais</Text>
+        </Animated.View>
+      )}
+      
+      {/* Action Bar */}
+      <View style={styles.actionBar}>
+        <View style={styles.infoContainer}>
+          <Text style={styles.productCount}>
+            {filteredProdutos.length} {filteredProdutos.length === 1 ? 'Produto' : 'Produtos'}
+          </Text>
+          {lastUpdate && (
+            <Text style={styles.lastUpdateText}>
+              Atualizado: {formatarData(lastUpdate.toISOString())}
+            </Text>
+          )}
+        </View>
+        
+        <View style={styles.actionButtons}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={toggleFilterOptions}
+          >
+            <MaterialIcons 
+              name={showFilterOptions ? "filter-list-off" : "filter-list"} 
+              size={24} 
+              color={COLORS.primary} 
+            />
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={toggleSearchBar}
+          >
+            <MaterialIcons 
+              name={showSearch ? "close" : "search"} 
+              size={24} 
+              color={COLORS.primary} 
+            />
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => navigation.navigate('Scanner')}
+          >
+            <MaterialIcons name="qr-code-scanner" size={24} color={COLORS.primary} />
+          </TouchableOpacity>
+        </View>
+      </View>
+      
+      {/* Filter Options */}
+      {showFilterOptions && (
+        <Animated.View 
+          style={[
+            styles.filterOptionsContainer,
+            {
+              maxHeight: filterOptionsAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 200]
+              }),
+              opacity: filterOptionsAnim
+            }
+          ]}
+        >
+          <View style={styles.filterOption}>
+            <Text style={styles.filterLabel}>Apenas produtos em baixo stock:</Text>
+            <Switch
+              value={showLowStock}
+              onValueChange={setShowLowStock}
+              trackColor={{ false: COLORS.lightGrey, true: COLORS.primaryLight }}
+              thumbColor={showLowStock ? COLORS.primary : COLORS.grey}
+            />
+          </View>
+          
+          <Text style={styles.filterSectionTitle}>Agrupar por:</Text>
+          
+          <View style={styles.groupByOptions}>
+            <TouchableOpacity
+              style={[
+                styles.groupByOption,
+                groupBy === null && styles.activeGroupByOption
+              ]}
+              onPress={() => setGroupBy(null)}
+            >
+              <MaterialIcons 
+                name="format-list-bulleted" 
+                size={18} 
+                color={groupBy === null ? COLORS.primary : COLORS.grey} 
+              />
+              <Text style={[
+                styles.groupByText,
+                groupBy === null && styles.activeGroupByText
+              ]}>
+                Nenhum
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[
+                styles.groupByOption,
+                groupBy === 'fornecedor' && styles.activeGroupByOption
+              ]}
+              onPress={() => setGroupBy('fornecedor')}
+            >
+              <MaterialIcons 
+                name="business" 
+                size={18} 
+                color={groupBy === 'fornecedor' ? COLORS.primary : COLORS.grey} 
+              />
+              <Text style={[
+                styles.groupByText,
+                groupBy === 'fornecedor' && styles.activeGroupByText
+              ]}>
+                Fornecedor
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[
+                styles.groupByOption,
+                groupBy === 'localizacao' && styles.activeGroupByOption
+              ]}
+              onPress={() => setGroupBy('localizacao')}
+            >
+              <MaterialIcons 
+                name="place" 
+                size={18} 
+                color={groupBy === 'localizacao' ? COLORS.primary : COLORS.grey} 
+              />
+              <Text style={[
+                styles.groupByText,
+                groupBy === 'localizacao' && styles.activeGroupByText
+              ]}>
+                Localização
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      )}
+      
+      {/* Search bar */}
+      {showSearch && (
+        <Animated.View 
+          style={[
+            styles.searchContainer,
+            {
+              maxHeight: searchExpandAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 60]
+              }),
+              opacity: searchExpandAnim
+            }
+          ]}
+        >
+          <View style={styles.searchInputContainer}>
+            <MaterialIcons name="search" size={20} color={COLORS.grey} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Pesquisar produtos..."
+              value={searchText}
+              onChangeText={setSearchText}
+              placeholderTextColor={COLORS.grey}
+              autoFocus={showSearch}
+            />
+            {searchText.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchText('')}>
+                <MaterialIcons name="clear" size={20} color={COLORS.grey} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </Animated.View>
+      )}
+      
+      {/* Sorting header */}
+      {!groupBy && (
+        <Animated.View style={[
+          styles.sortHeader,
+          {
+            opacity: searchBarAnim,
+            transform: [
+              { translateY: searchBarAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [-20, 0],
+              })}
+            ]
+          }
+        ]}>
+          <TouchableOpacity 
+            style={[
+              styles.sortButton,
+              sortOrder === 'codigo' && styles.activeSortButton
+            ]} 
+            onPress={() => updateSortOrder('codigo')}
+          >
+            <Text style={[
+              styles.sortButtonText,
+              sortOrder === 'codigo' && styles.activeSortText
+            ]}>
+              Código
+            </Text>
+            {getSortIconName('codigo') && (
+              <MaterialIcons 
+                name={getSortIconName('codigo') as any} 
+                size={16} 
+                color={sortOrder === 'codigo' ? COLORS.primary : COLORS.grey} 
+              />
+            )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[
+              styles.sortButtonName,
+              sortOrder === 'nome' && styles.activeSortButton
+            ]} 
+            onPress={() => updateSortOrder('nome')}
+          >
+            <Text style={[
+              styles.sortButtonText,
+              sortOrder === 'nome' && styles.activeSortText
+            ]}>
+              Nome
+            </Text>
+            {getSortIconName('nome') && (
+              <MaterialIcons 
+                name={getSortIconName('nome') as any} 
+                size={16} 
+                color={sortOrder === 'nome' ? COLORS.primary : COLORS.grey} 
+              />
+            )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[
+              styles.sortButton,
+              sortOrder === 'quantidade' && styles.activeSortButton
+            ]} 
+            onPress={() => updateSortOrder('quantidade')}
+          >
+            <Text style={[
+              styles.sortButtonText,
+              sortOrder === 'quantidade' && styles.activeSortText
+            ]}>
+              Qtd
+            </Text>
+            {getSortIconName('quantidade') && (
+              <MaterialIcons 
+                name={getSortIconName('quantidade') as any} 
+                size={16} 
+                color={sortOrder === 'quantidade' ? COLORS.primary : COLORS.grey} 
+              />
+            )}
+          </TouchableOpacity>
+        </Animated.View>
+      )}
+    </>
+  );
 
   // Render a list item
   const renderProductItem = ({ item, index }: { item: Produto, index: number }) => {
@@ -291,6 +731,9 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
     const animValue = index < listItemAnims.length 
       ? listItemAnims[index] 
       : new Animated.Value(1);
+    
+    const stockStatus = getStockStatus(item.quantidade, item.quantidade_minima);
+    const { icon, color, bgColor, borderColor } = getStockInfo(stockStatus);
       
     return (
       <Animated.View
@@ -313,158 +756,88 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
           onPress={() => navigation.navigate('ProductDetail', { product: item })}
           activeOpacity={0.7}
         >
+          <View style={[styles.productStatusBar, { backgroundColor: color }]} />
+          
           <View style={styles.productInfo}>
-            <Text style={styles.productCode}>{item.codigo}</Text>
+            <View style={styles.productHeader}>
+              <View style={styles.productCodeContainer}>
+                <FontAwesome5 name="barcode" size={12} color={COLORS.primary} />
+                <Text style={styles.productCode}>{item.codigo}</Text>
+              </View>
+              
+              {item.localizacao && !groupBy && (
+                <View style={styles.locationContainer}>
+                  <MaterialIcons name="place" size={12} color={COLORS.grey} />
+                  <Text style={styles.locationText}>{item.localizacao}</Text>
+                </View>
+              )}
+            </View>
+            
             <Text style={styles.productName}>{item.nome}</Text>
+            
             {item.descricao ? (
               <Text style={styles.productDescription} numberOfLines={1}>
                 {item.descricao}
               </Text>
             ) : null}
+            
+            {item.fornecedor && !groupBy && (
+              <View style={styles.supplierContainer}>
+                <MaterialIcons name="business" size={12} color={COLORS.grey} />
+                <Text style={styles.supplierText}>
+                  {item.fornecedor}
+                </Text>
+              </View>
+            )}
+            
+            {item.data_atualizacao && (
+              <View style={styles.dataContainer}>
+                <MaterialIcons name="update" size={10} color={COLORS.grey} />
+                <Text style={styles.dataText}>
+                  {formatarData(item.data_atualizacao).split(' ')[0]}
+                </Text>
+              </View>
+            )}
           </View>
+          
           <View style={[
             styles.quantityContainer, 
-            item.quantidade < (item.quantidade_minima || 5) ? styles.lowQuantity : 
-            item.quantidade > 20 ? styles.highQuantity : 
-            styles.normalQuantity
+            { backgroundColor: bgColor, borderColor: borderColor }
           ]}>
-            <Text style={styles.quantity}>{item.quantidade}</Text>
+            <MaterialIcons name={icon as any} size={16} color={color} />
+            <Text style={[styles.quantity, { color }]}>{item.quantidade}</Text>
             <Text style={styles.quantityLabel}>unid.</Text>
+            
+            {item.quantidade_minima && (
+              <Text style={styles.minimumLabel}>
+                min: {item.quantidade_minima}
+              </Text>
+            )}
           </View>
         </TouchableOpacity>
       </Animated.View>
     );
   };
 
-  // FAB actions
-  const fabActions = [
-    {
-      icon: '📦',
-      name: 'Novo Produto',
-      onPress: () => navigation.navigate('AddProduct'),
-      color: COLORS.success
-    },
-    {
-      icon: '📊',
-      name: 'Dashboard',
-      onPress: () => navigation.navigate('Dashboard'),
-      color: COLORS.info
-    },
-    {
-      icon: '🔍',
-      name: 'Escanear',
-      onPress: () => navigation.navigate('Scanner'),
-      color: COLORS.accent
-    }
-  ];
-
-  return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={[COLORS.primary, COLORS.primaryDark]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.header}
-      >
-        <Header 
-          title="Lista de Produtos" 
-          showLogo={false} 
-          showBack={true} 
-          onBack={() => navigation.goBack()} 
-        />
-      </LinearGradient>
-
-      {!isOnline && (
-        <Animated.View 
-          style={[
-            styles.offlineBanner,
-            { opacity: fadeAnim }
-          ]}
-        >
-          <Text style={styles.offlineText}>Modo Offline - Exibindo dados locais</Text>
-        </Animated.View>
-      )}
-      
-      {/* Search bar */}
-      <Animated.View style={[
-        styles.searchContainer,
-        {
-          opacity: searchBarAnim,
-          transform: [
-            { translateY: searchBarAnim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [-20, 0],
-            })}
-          ]
-        }
-      ]}>
-        <View style={styles.searchInputContainer}>
-          <Text style={styles.searchIcon}>🔍</Text>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Pesquisar produtos..."
-            value={searchText}
-            onChangeText={setSearchText}
-            clearButtonMode="while-editing"
-          />
-        </View>
-      </Animated.View>
-      
-      {/* Sorting header */}
-      <Animated.View style={[
-        styles.sortHeader,
-        {
-          opacity: searchBarAnim,
-          transform: [
-            { translateY: searchBarAnim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [-20, 0],
-            })}
-          ]
-        }
-      ]}>
-        <TouchableOpacity 
-          style={styles.sortButton} 
-          onPress={() => updateSortOrder('codigo')}
-        >
-          <Text style={[
-            styles.sortButtonText,
-            sortOrder === 'codigo' && styles.activeSortText
-          ]}>
-            Código {getSortIcon('codigo')}
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.sortButtonName} 
-          onPress={() => updateSortOrder('nome')}
-        >
-          <Text style={[
-            styles.sortButtonText,
-            sortOrder === 'nome' && styles.activeSortText
-          ]}>
-            Nome {getSortIcon('nome')}
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.sortButton} 
-          onPress={() => updateSortOrder('quantidade')}
-        >
-          <Text style={[
-            styles.sortButtonText,
-            sortOrder === 'quantidade' && styles.activeSortText
-          ]}>
-            Qtd {getSortIcon('quantidade')}
-          </Text>
-        </TouchableOpacity>
-      </Animated.View>
-
-      {/* Products list */}
+  // Renderizar lista agrupada
+  const renderGroupedList = () => {
+    if (!groupedProdutos) return null;
+    
+    return (
       <FlatList
-        data={filteredProdutos}
-        keyExtractor={(item) => item.codigo}
-        renderItem={renderProductItem}
+        data={groupedProdutos}
+        keyExtractor={(item) => item.title}
+        renderItem={({ item }) => (
+          <View>
+            {renderGroupHeader(item.title, item.data.length)}
+            {item.data.map((produto, index) => (
+              <View key={String(produto.id || produto.codigo)}>
+                {renderProductItem({ item: produto, index })}
+              </View>
+            ))}
+          </View>
+        )}
+        ListHeaderComponent={renderListHeader}
         ListEmptyComponent={renderEmptyList}
         contentContainerStyle={[
           filteredProdutos.length === 0 ? { flex: 1 } : { paddingBottom: 80 },
@@ -484,6 +857,76 @@ export default function ProductListScreen({ navigation }: ProductListScreenProps
           />
         }
       />
+    );
+  };
+
+  // FAB actions
+  const fabActions = [
+    {
+      icon: "add-box",
+      name: 'Novo Produto',
+      onPress: () => navigation.navigate('AddProduct'),
+      color: COLORS.success
+    },
+    {
+      icon: "insights",
+      name: 'Dashboard',
+      onPress: () => navigation.navigate('Dashboard'),
+      color: COLORS.info
+    },
+    {
+      icon: "error",
+      name: 'Críticos',
+      onPress: () => navigation.navigate('CriticalProducts'),
+      color: COLORS.warning
+    }
+  ];
+
+  return (
+    <View style={styles.container}>
+      <StatusBar backgroundColor={COLORS.primaryDark} barStyle="light-content" />
+      
+      <LinearGradient
+        colors={[COLORS.primary, COLORS.primaryDark]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
+        <Header 
+          title="Lista de Produtos" 
+          showLogo={false} 
+          showBack={true} 
+          onBack={() => navigation.goBack()} 
+        />
+      </LinearGradient>
+
+      {/* Products list or grouped list */}
+      {groupBy ? renderGroupedList() : (
+        <FlatList
+          data={filteredProdutos}
+          keyExtractor={(item) => String(item.id || item.codigo)}
+          renderItem={renderProductItem}
+          ListHeaderComponent={renderListHeader}
+          ListEmptyComponent={renderEmptyList}
+          contentContainerStyle={[
+            filteredProdutos.length === 0 ? { flex: 1 } : { paddingBottom: 80 },
+            styles.listContainer
+          ]}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                // Reset animations for refresh effect
+                listItemAnims.forEach(anim => anim.setValue(0));
+                loadProdutos();
+              }}
+              colors={[COLORS.primary]}
+              tintColor={COLORS.primary}
+            />
+          }
+        />
+      )}
 
       {/* Floating action button */}
       <FloatingActionButton
@@ -526,22 +969,97 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.grey,
   },
-  searchContainer: {
+  actionBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     backgroundColor: COLORS.white,
-    padding: 15,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0,0,0,0.05)',
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.black,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 3,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
+  },
+  infoContainer: {
+    flex: 1,
+  },
+  productCount: {
+    fontSize: 14,
+    color: COLORS.grey,
+    fontWeight: '500',
+  },
+  lastUpdateText: {
+    fontSize: 11,
+    color: COLORS.grey,
+    marginTop: 4,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+  },
+  actionButton: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 22,
+    marginLeft: 8,
+  },
+  filterOptionsContainer: {
+    backgroundColor: COLORS.white,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    overflow: 'hidden',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+  },
+  filterOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: 8,
+  },
+  filterLabel: {
+    fontSize: 14,
+    color: COLORS.black,
+  },
+  filterSectionTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.grey,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  groupByOptions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  groupByOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    borderRadius: 8,
+    flex: 1,
+    marginHorizontal: 4,
+  },
+  activeGroupByOption: {
+    backgroundColor: COLORS.primaryLight + '33', // 20% opacity
+  },
+  groupByText: {
+    fontSize: 13,
+    color: COLORS.grey,
+    marginLeft: 4,
+  },
+  activeGroupByText: {
+    color: COLORS.primary,
+    fontWeight: '500',
+  },
+  searchContainer: {
+    backgroundColor: COLORS.white,
+    paddingHorizontal: 16,
+    paddingVertical: 0,
+    overflow: 'hidden',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
   },
   searchInputContainer: {
     flexDirection: 'row',
@@ -552,17 +1070,15 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.05)',
-  },
-  searchIcon: {
-    fontSize: 16,
-    marginRight: 8,
-    color: COLORS.grey,
+    height: 44,
+    marginVertical: 8,
   },
   searchInput: {
     flex: 1,
     height: 40,
     fontSize: 16,
     color: COLORS.black,
+    marginLeft: 8,
   },
   sortHeader: {
     flexDirection: 'row',
@@ -573,33 +1089,84 @@ const styles = StyleSheet.create({
   },
   sortButton: {
     flex: 1,
-    paddingVertical: 8,
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginHorizontal: 2,
   },
   sortButtonName: {
     flex: 2,
-    paddingVertical: 8,
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginHorizontal: 2,
+  },
+  activeSortButton: {
+    backgroundColor: COLORS.primaryLight + '33', // 20% opacity
   },
   sortButtonText: {
     fontSize: 14,
     fontWeight: '500',
     color: COLORS.grey,
+    marginRight: 4,
   },
   activeSortText: {
     color: COLORS.primary,
     fontWeight: 'bold',
   },
   listContainer: {
-    paddingTop: 10,
+    paddingTop: 0,
+  },
+  groupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginTop: 16,
+    marginHorizontal: 16,
+    borderRadius: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.black,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  groupTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.black,
+    marginLeft: 8,
+    flex: 1,
+  },
+  groupCount: {
+    backgroundColor: COLORS.primaryLight,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  groupCountText: {
+    fontSize: 12,
+    color: COLORS.white,
+    fontWeight: '600',
   },
   productItem: {
     flexDirection: 'row',
     backgroundColor: COLORS.white,
-    marginHorizontal: 15,
-    marginBottom: 15,
-    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 16,
     borderRadius: 16,
+    overflow: 'hidden',
     ...Platform.select({
       ios: {
         shadowColor: COLORS.black,
@@ -608,61 +1175,95 @@ const styles = StyleSheet.create({
         shadowRadius: 4,
       },
       android: {
-        elevation: 2,
+        elevation: 3,
       },
     }),
   },
+  productStatusBar: {
+    width: 6,
+    height: '100%',
+  },
   productInfo: {
     flex: 1,
+    padding: 16,
+  },
+  productHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  productCodeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   productCode: {
     fontSize: 14,
     color: COLORS.primary,
     fontWeight: 'bold',
+    marginLeft: 4,
+  },
+  locationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  locationText: {
+    fontSize: 12,
+    color: COLORS.grey,
+    marginLeft: 2,
   },
   productName: {
     fontSize: 16,
     color: COLORS.black,
-    marginTop: 4,
-    fontWeight: '500',
+    fontWeight: '600',
+    marginBottom: 4,
   },
   productDescription: {
     fontSize: 14,
     color: COLORS.grey,
+    marginBottom: 4,
+  },
+  supplierContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 4,
   },
+  supplierText: {
+    fontSize: 12,
+    color: COLORS.grey,
+    marginLeft: 4,
+  },
+  dataContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  dataText: {
+    fontSize: 10,
+    color: COLORS.grey,
+    marginLeft: 4,
+  },
   quantityContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 16,
+    width: 70,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 10,
-  },
-  lowQuantity: {
-    backgroundColor: '#FFEBEE',
-    borderWidth: 1,
-    borderColor: '#FFCDD2',
-  },
-  normalQuantity: {
-    backgroundColor: '#E3F2FD',
-    borderWidth: 1,
-    borderColor: '#BBDEFB',
-  },
-  highQuantity: {
-    backgroundColor: '#E8F5E9',
-    borderWidth: 1,
-    borderColor: '#C8E6C9',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderLeftWidth: 1,
   },
   quantity: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.black,
+    marginTop: 4,
   },
   quantityLabel: {
     fontSize: 12,
     color: COLORS.grey,
     marginTop: 2,
+  },
+  minimumLabel: {
+    fontSize: 10,
+    color: COLORS.grey,
+    marginTop: 6,
   },
   emptyContainer: {
     flex: 1,
@@ -673,14 +1274,16 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     color: COLORS.grey,
-    marginBottom: 20,
+    marginVertical: 20,
     textAlign: 'center',
   },
   addButton: {
+    flexDirection: 'row',
     backgroundColor: COLORS.primary,
     padding: 15,
     borderRadius: 16,
     alignItems: 'center',
+    justifyContent: 'center',
     width: '80%',
     ...Platform.select({
       ios: {
@@ -695,30 +1298,37 @@ const styles = StyleSheet.create({
     }),
   },
   clearButton: {
+    flexDirection: 'row',
     backgroundColor: COLORS.grey,
     padding: 12,
     borderRadius: 16,
     alignItems: 'center',
+    justifyContent: 'center',
     width: '60%',
   },
   buttonText: {
     color: COLORS.white,
     fontSize: 16,
     fontWeight: 'bold',
+    marginLeft: 8,
   },
   clearButtonText: {
     color: COLORS.white,
     fontSize: 14,
     fontWeight: '500',
+    marginLeft: 8,
   },
   offlineBanner: {
+    flexDirection: 'row',
     backgroundColor: COLORS.error,
     padding: 8,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   offlineText: {
     color: COLORS.white,
     fontSize: 14,
     fontWeight: '500',
+    marginLeft: 8,
   },
 });

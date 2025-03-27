@@ -14,7 +14,8 @@ import {
   Platform,
   Animated,
   Easing,
-  Dimensions
+  Dimensions,
+  Image
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
@@ -23,6 +24,7 @@ import { getProduto, atualizarProduto, deletarProduto, criarMovimentacao, getMov
 import Header from '../components/Header';
 import { useTheme } from '../contexts/ThemeContext';
 import ProductAIAnalysis from '../components/ProductAIAnalysis';
+import { MaterialIcons } from '@expo/vector-icons';
 
 // Types for navigation and route
 type ProductDetailScreenProps = {
@@ -57,6 +59,9 @@ interface Movimentacao {
   produto_nome?: string;
 }
 
+// Screen dimensions
+const { width: screenWidth } = Dimensions.get('window');
+
 export default function ProductDetailScreen({ route, navigation }: ProductDetailScreenProps) {
   const { theme } = useTheme();
   const { COLORS } = theme;
@@ -81,6 +86,12 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(normalizedProduct.nome);
   const [editedDescription, setEditedDescription] = useState(normalizedProduct.descricao || '');
+  const [editedLocation, setEditedLocation] = useState(normalizedProduct.localizacao || '');
+  const [editedSupplier, setEditedSupplier] = useState(normalizedProduct.fornecedor || '');
+  const [editedMinQuantity, setEditedMinQuantity] = useState(
+    normalizedProduct.quantidade_minima ? String(normalizedProduct.quantidade_minima) : ''
+  );
+  const [editedNotes, setEditedNotes] = useState(normalizedProduct.notas || '');
   const [quantity, setQuantity] = useState(normalizedProduct.quantidade);
   const [saving, setSaving] = useState(false);
   const [showMovementModal, setShowMovementModal] = useState(false);
@@ -91,6 +102,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [showAIAnalysis, setShowAIAnalysis] = useState(false);
+  const [showConfirmSave, setShowConfirmSave] = useState(false);
   
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -99,6 +111,8 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
   const quantityScale = useRef(new Animated.Value(1)).current;
   const modalAnim = useRef(new Animated.Value(0)).current;
   const aiButtonAnim = useRef(new Animated.Value(0)).current;
+  const editButtonAnim = useRef(new Animated.Value(1)).current;
+  const historyItemAnims = useRef<Animated.Value[]>([]).current;
 
   // Load updated product details and history
   useEffect(() => {
@@ -140,6 +154,10 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
             setQuantity(updatedProduct.quantidade);
             setEditedName(updatedProduct.nome);
             setEditedDescription(updatedProduct.descricao || '');
+            setEditedLocation(updatedProduct.localizacao || '');
+            setEditedSupplier(updatedProduct.fornecedor || '');
+            setEditedMinQuantity(updatedProduct.quantidade_minima ? String(updatedProduct.quantidade_minima) : '');
+            setEditedNotes(updatedProduct.notas || '');
           }
         }
         
@@ -163,6 +181,25 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
           (a, b) => new Date(b.data_movimentacao || '').getTime() - new Date(a.data_movimentacao || '').getTime()
         );
         setMovements(sortedMovements);
+        
+        // Prepare animations for movement items
+        historyItemAnims.length = 0;
+        sortedMovements.forEach(() => {
+          historyItemAnims.push(new Animated.Value(0));
+        });
+        
+        // Animate movement items
+        Animated.stagger(
+          50,
+          historyItemAnims.map(anim => 
+            Animated.spring(anim, {
+              toValue: 1,
+              friction: 8,
+              tension: 50,
+              useNativeDriver: true,
+            })
+          )
+        ).start();
       } else {
         setMovements([]);
       }
@@ -188,7 +225,11 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
         ...produto,
         nome: editedName.trim(),
         descricao: editedDescription.trim() || undefined,
-        quantidade: quantity
+        quantidade: quantity,
+        localizacao: editedLocation.trim() || undefined,
+        fornecedor: editedSupplier.trim() || undefined,
+        quantidade_minima: editedMinQuantity ? parseInt(editedMinQuantity) : undefined,
+        notas: editedNotes.trim() || undefined
       };
       
       // Use API function to update
@@ -201,7 +242,24 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
         // Update route parameters
         navigation.setParams({ product: result });
         
-        Alert.alert("Sucesso", "Produto atualizado com sucesso");
+        // Animate the button
+        Animated.sequence([
+          Animated.timing(editButtonAnim, {
+            toValue: 1.2,
+            duration: 200,
+            useNativeDriver: true
+          }),
+          Animated.timing(editButtonAnim, {
+            toValue: 1,
+            duration: 200,
+            useNativeDriver: true,
+            easing: Easing.out(Easing.back(1.5))
+          })
+        ]).start();
+        
+        setShowConfirmSave(true);
+        setTimeout(() => setShowConfirmSave(false), 2000);
+        
         setIsEditing(false);
       } else {
         Alert.alert("Erro", "Produto sem ID válido");
@@ -388,6 +446,24 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
     setShowAIAnalysis(!showAIAnalysis);
   };
 
+  // Get stock status color
+  const getStockStatusColor = () => {
+    if (!produto.quantidade_minima) return COLORS.info;
+    
+    if (quantity <= 0) return COLORS.error;
+    if (quantity < produto.quantidade_minima) return COLORS.warning;
+    return COLORS.success;
+  };
+  
+  // Get stock status text
+  const getStockStatusText = () => {
+    if (!produto.quantidade_minima) return "Estoque sem mínimo definido";
+    
+    if (quantity <= 0) return "Sem estoque";
+    if (quantity < produto.quantidade_minima) return "Estoque baixo";
+    return "Estoque normal";
+  };
+
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -412,6 +488,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Main product card */}
         <Animated.View style={[
           styles.card,
           {
@@ -422,68 +499,162 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
             backgroundColor: COLORS.card
           }
         ]}>
-          <View style={styles.headerRow}>
+          <View style={styles.productHeader}>
             <View style={styles.codeContainer}>
-              <Text style={[styles.codeLabel, { color: COLORS.grey }]}>Código</Text>
+              <MaterialIcons name="qr-code" size={16} color={COLORS.primary} />
               <Text style={[styles.codeValue, { color: COLORS.primary }]}>{produto.codigo}</Text>
             </View>
             
-            {!isEditing ? (
-              <TouchableOpacity 
-                style={[styles.editButton, { backgroundColor: COLORS.primaryLight }]}
-                onPress={() => setIsEditing(true)}
-              >
-                <Text style={styles.editButtonText}>Editar</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity 
-                style={[styles.cancelButton, { backgroundColor: COLORS.grey }]}
-                onPress={() => {
-                  setIsEditing(false);
-                  setEditedName(produto.nome);
-                  setEditedDescription(produto.descricao || '');
-                }}
-              >
-                <Text style={styles.cancelButtonText}>Cancelar</Text>
-              </TouchableOpacity>
-            )}
+            <Animated.View style={{
+              transform: [{ scale: editButtonAnim }]
+            }}>
+              {!isEditing ? (
+                <TouchableOpacity 
+                  style={[styles.editButton, { backgroundColor: COLORS.primaryLight }]}
+                  onPress={() => setIsEditing(true)}
+                >
+                  <MaterialIcons name="edit" size={16} color="#FFFFFF" />
+                  <Text style={styles.editButtonText}>Editar</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity 
+                  style={[styles.cancelButton, { backgroundColor: COLORS.grey }]}
+                  onPress={() => {
+                    setIsEditing(false);
+                    setEditedName(produto.nome);
+                    setEditedDescription(produto.descricao || '');
+                    setEditedLocation(produto.localizacao || '');
+                    setEditedSupplier(produto.fornecedor || '');
+                    setEditedMinQuantity(produto.quantidade_minima ? String(produto.quantidade_minima) : '');
+                    setEditedNotes(produto.notas || '');
+                  }}
+                >
+                  <MaterialIcons name="close" size={16} color="#FFFFFF" />
+                  <Text style={styles.cancelButtonText}>Cancelar</Text>
+                </TouchableOpacity>
+              )}
+            </Animated.View>
           </View>
           
           {isEditing ? (
             // Edit mode
             <View style={styles.editContainer}>
-              <Text style={[styles.label, { color: COLORS.grey }]}>Nome do Produto:</Text>
-              <TextInput
-                style={[
-                  styles.input, 
-                  { 
-                    backgroundColor: COLORS.ultraLightGrey,
-                    borderColor: COLORS.lightGrey,
-                    color: COLORS.text
-                  }
-                ]}
-                value={editedName}
-                onChangeText={setEditedName}
-                placeholder="Nome do produto"
-              />
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, { color: COLORS.textSecondary }]}>Nome do Produto:</Text>
+                <TextInput
+                  style={[
+                    styles.input, 
+                    { 
+                      backgroundColor: COLORS.ultraLightGrey,
+                      borderColor: COLORS.lightGrey,
+                      color: COLORS.text
+                    }
+                  ]}
+                  value={editedName}
+                  onChangeText={setEditedName}
+                  placeholder="Nome do produto"
+                  placeholderTextColor={COLORS.grey}
+                />
+              </View>
               
-              <Text style={[styles.label, { color: COLORS.grey }]}>Descrição:</Text>
-              <TextInput
-                style={[
-                  styles.input, 
-                  styles.textArea,
-                  { 
-                    backgroundColor: COLORS.ultraLightGrey,
-                    borderColor: COLORS.lightGrey,
-                    color: COLORS.text
-                  }
-                ]}
-                value={editedDescription}
-                onChangeText={setEditedDescription}
-                placeholder="Descrição do produto"
-                multiline
-                numberOfLines={4}
-              />
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, { color: COLORS.textSecondary }]}>Descrição:</Text>
+                <TextInput
+                  style={[
+                    styles.input, 
+                    styles.textArea,
+                    { 
+                      backgroundColor: COLORS.ultraLightGrey,
+                      borderColor: COLORS.lightGrey,
+                      color: COLORS.text
+                    }
+                  ]}
+                  value={editedDescription}
+                  onChangeText={setEditedDescription}
+                  placeholder="Descrição do produto"
+                  placeholderTextColor={COLORS.grey}
+                  multiline
+                  numberOfLines={4}
+                />
+              </View>
+              
+              <View style={styles.formRow}>
+                <View style={[styles.inputGroup, { flex: 1, marginRight: 10 }]}>
+                  <Text style={[styles.label, { color: COLORS.textSecondary }]}>Localização:</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      { 
+                        backgroundColor: COLORS.ultraLightGrey,
+                        borderColor: COLORS.lightGrey,
+                        color: COLORS.text
+                      }
+                    ]}
+                    value={editedLocation}
+                    onChangeText={setEditedLocation}
+                    placeholder="Localização"
+                    placeholderTextColor={COLORS.grey}
+                  />
+                </View>
+                
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={[styles.label, { color: COLORS.textSecondary }]}>Qtd. Mínima:</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      { 
+                        backgroundColor: COLORS.ultraLightGrey,
+                        borderColor: COLORS.lightGrey,
+                        color: COLORS.text
+                      }
+                    ]}
+                    value={editedMinQuantity}
+                    onChangeText={setEditedMinQuantity}
+                    placeholder="Qtd. mínima"
+                    placeholderTextColor={COLORS.grey}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+              
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, { color: COLORS.textSecondary }]}>Fornecedor:</Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    { 
+                      backgroundColor: COLORS.ultraLightGrey,
+                      borderColor: COLORS.lightGrey,
+                      color: COLORS.text
+                    }
+                  ]}
+                  value={editedSupplier}
+                  onChangeText={setEditedSupplier}
+                  placeholder="Fornecedor"
+                  placeholderTextColor={COLORS.grey}
+                />
+              </View>
+              
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, { color: COLORS.textSecondary }]}>Notas:</Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    styles.textArea,
+                    { 
+                      backgroundColor: COLORS.ultraLightGrey,
+                      borderColor: COLORS.lightGrey,
+                      color: COLORS.text
+                    }
+                  ]}
+                  value={editedNotes}
+                  onChangeText={setEditedNotes}
+                  placeholder="Notas adicionais"
+                  placeholderTextColor={COLORS.grey}
+                  multiline
+                  numberOfLines={3}
+                />
+              </View>
               
               <TouchableOpacity 
                 style={[styles.saveButton, { backgroundColor: COLORS.success }]}
@@ -493,28 +664,146 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
                 {saving ? (
                   <ActivityIndicator size="small" color="white" />
                 ) : (
-                  <Text style={styles.saveButtonText}>Salvar Alterações</Text>
+                  <View style={styles.buttonContent}>
+                    <MaterialIcons name="save" size={18} color="#FFFFFF" />
+                    <Text style={styles.saveButtonText}>Salvar Alterações</Text>
+                  </View>
                 )}
               </TouchableOpacity>
             </View>
           ) : (
             // View mode
             <View>
-              <Text style={[styles.label, { color: COLORS.grey }]}>Nome:</Text>
-              <Text style={[styles.value, { color: COLORS.text }]}>{produto.nome}</Text>
+              <Text style={[styles.productName, { color: COLORS.text }]}>{produto.nome}</Text>
               
-              <Text style={[styles.label, { color: COLORS.grey }]}>Descrição:</Text>
-              <Text style={[styles.value, { color: COLORS.text }]}>
-                {produto.descricao || "Nenhuma descrição disponível"}
-              </Text>
+              <View style={[styles.divider, { backgroundColor: COLORS.lightGrey }]} />
+              
+              <View style={styles.infoSection}>
+                <View style={styles.infoRow}>
+                  <View style={styles.infoLabel}>
+                    <MaterialIcons name="description" size={16} color={COLORS.textSecondary} />
+                    <Text style={[styles.infoText, { color: COLORS.textSecondary }]}>Descrição:</Text>
+                  </View>
+                  <Text style={[styles.infoValue, { color: COLORS.text }]}>
+                    {produto.descricao || "Nenhuma descrição disponível"}
+                  </Text>
+                </View>
+                
+                <View style={styles.infoRow}>
+                  <View style={styles.infoLabel}>
+                    <MaterialIcons name="location-on" size={16} color={COLORS.textSecondary} />
+                    <Text style={[styles.infoText, { color: COLORS.textSecondary }]}>Localização:</Text>
+                  </View>
+                  <Text style={[styles.infoValue, { color: COLORS.text }]}>
+                    {produto.localizacao || "Não definida"}
+                  </Text>
+                </View>
+                
+                <View style={styles.infoRow}>
+                  <View style={styles.infoLabel}>
+                    <MaterialIcons name="business" size={16} color={COLORS.textSecondary} />
+                    <Text style={[styles.infoText, { color: COLORS.textSecondary }]}>Fornecedor:</Text>
+                  </View>
+                  <Text style={[styles.infoValue, { color: COLORS.text }]}>
+                    {produto.fornecedor || "Não definido"}
+                  </Text>
+                </View>
+                
+                {produto.notas && (
+                  <View style={styles.infoRow}>
+                    <View style={styles.infoLabel}>
+                      <MaterialIcons name="notes" size={16} color={COLORS.textSecondary} />
+                      <Text style={[styles.infoText, { color: COLORS.textSecondary }]}>Notas:</Text>
+                    </View>
+                    <Text style={[styles.infoValue, { color: COLORS.text }]}>
+                      {produto.notas}
+                    </Text>
+                  </View>
+                )}
+                
+                {produto.data_atualizacao && (
+                  <View style={styles.updatedAt}>
+                    <MaterialIcons name="update" size={14} color={COLORS.textSecondary} />
+                    <Text style={[styles.updatedAtText, { color: COLORS.textSecondary }]}>
+                      Atualizado em: {formatDateTime(produto.data_atualizacao)}
+                    </Text>
+                  </View>
+                )}
+              </View>
             </View>
           )}
           
-          <View style={[styles.stockSection, { backgroundColor: COLORS.ultraLightGrey }]}>
-            <Text style={[styles.stockTitle, { color: COLORS.text }]}>Quantidade em Estoque:</Text>
+          {showConfirmSave && (
+            <View style={[styles.confirmSaveMessage, { backgroundColor: `${COLORS.success}30` }]}>
+              <MaterialIcons name="check-circle" size={20} color={COLORS.success} />
+              <Text style={[styles.confirmSaveText, { color: COLORS.success }]}>
+                Produto atualizado com sucesso!
+              </Text>
+            </View>
+          )}
+        </Animated.View>
+        
+        {/* Estoque card */}
+        <Animated.View style={[
+          styles.stockCard,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+            backgroundColor: COLORS.card
+          }
+        ]}>
+          <View style={styles.stockHeader}>
+            <MaterialIcons name="inventory" size={20} color={COLORS.primary} />
+            <Text style={[styles.stockTitle, { color: COLORS.primary }]}>Gerenciamento de Estoque</Text>
+          </View>
+          
+          <View style={styles.stockStatusRow}>
+            <View style={[
+              styles.stockStatusIndicator, 
+              { backgroundColor: getStockStatusColor() }
+            ]}>
+              <MaterialIcons 
+                name={
+                  quantity <= 0 ? "error" : 
+                  quantity < (produto.quantidade_minima || 0) ? "warning" : "check-circle"
+                } 
+                size={20} 
+                color="#FFFFFF" 
+              />
+            </View>
+            
+            <View style={styles.stockStatusInfo}>
+              <Text style={[styles.stockStatusText, { color: getStockStatusColor() }]}>
+                {getStockStatusText()}
+              </Text>
+              
+              {produto.quantidade_minima && (
+                <Text style={[styles.minQuantityText, { color: COLORS.textSecondary }]}>
+                  Mínimo: {produto.quantidade_minima} unidades
+                </Text>
+              )}
+            </View>
+          </View>
+          
+          <View style={[styles.quantityControlContainer, { backgroundColor: COLORS.ultraLightGrey }]}>
+            <View style={styles.quantityDisplay}>
+              <Text style={[styles.quantityLabel, { color: COLORS.textSecondary }]}>
+                Quantidade em Estoque:
+              </Text>
+              <Animated.View style={{
+                transform: [{ scale: quantityScale }]
+              }}>
+                <Text style={[styles.quantityValue, { color: COLORS.text }]}>{quantity}</Text>
+              </Animated.View>
+            </View>
+            
             <View style={styles.quantityControl}>
               <TouchableOpacity 
-                style={[styles.quantityButton, quantity <= 0 && styles.disabledButton, { backgroundColor: COLORS.error }]}
+                style={[
+                  styles.quantityButton, 
+                  quantity <= 0 && styles.disabledButton, 
+                  { backgroundColor: COLORS.error }
+                ]}
                 onPress={() => {
                   if (quantity > 0) {
                     Animated.sequence([
@@ -536,14 +825,8 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
                 }}
                 disabled={quantity <= 0}
               >
-                <Text style={styles.quantityButtonText}>-</Text>
+                <MaterialIcons name="remove" size={20} color="#FFFFFF" />
               </TouchableOpacity>
-              
-              <Animated.View style={{
-                transform: [{ scale: quantityScale }]
-              }}>
-                <Text style={[styles.quantityValue, { color: COLORS.text }]}>{quantity}</Text>
-              </Animated.View>
               
               <TouchableOpacity 
                 style={[styles.quantityButton, { backgroundColor: COLORS.success }]}
@@ -565,30 +848,30 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
                   setQuantity(quantity + 1);
                 }}
               >
-                <Text style={styles.quantityButtonText}>+</Text>
+                <MaterialIcons name="add" size={20} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
           </View>
           
-          <View style={styles.buttonsContainer}>
+          <View style={styles.movementButtons}>
             <TouchableOpacity 
-              style={[styles.actionButton, styles.entryButton, { backgroundColor: COLORS.success }]}
+              style={[styles.movementButton, { backgroundColor: COLORS.success }]}
               onPress={() => openMovementModal('entrada')}
             >
-              <Text style={styles.actionButtonText}>Registrar Entrada</Text>
+              <MaterialIcons name="arrow-downward" size={20} color="#FFFFFF" />
+              <Text style={styles.movementButtonText}>Registrar Entrada</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
               style={[
-                styles.actionButton, 
-                styles.exitButton,
-                quantity <= 0 && styles.disabledButton,
-                { backgroundColor: quantity > 0 ? COLORS.error : COLORS.lightGrey }
+                styles.movementButton, 
+                quantity <= 0 ? { backgroundColor: COLORS.grey } : { backgroundColor: COLORS.error }
               ]}
               onPress={() => openMovementModal('saida')}
               disabled={quantity <= 0}
             >
-              <Text style={styles.actionButtonText}>Registrar Saída</Text>
+              <MaterialIcons name="arrow-upward" size={20} color="#FFFFFF" />
+              <Text style={styles.movementButtonText}>Registrar Saída</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -630,7 +913,7 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
           />
         )}
         
-        {/* History section */}
+        {/* Histórico de movimentações */}
         <Animated.View style={[
           styles.historyCard,
           {
@@ -641,56 +924,109 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
             backgroundColor: COLORS.card
           }
         ]}>
-          <Text style={[styles.historyTitle, { color: COLORS.text }]}>Histórico de Movimentações</Text>
+          <View style={styles.historyHeader}>
+            <MaterialIcons name="history" size={20} color={COLORS.primary} />
+            <Text style={[styles.historyTitle, { color: COLORS.primary }]}>Histórico de Movimentações</Text>
+          </View>
           
           {loadingHistory ? (
-            <ActivityIndicator size="small" color={COLORS.primary} style={styles.historyLoader} />
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={[styles.loadingText, { color: COLORS.textSecondary }]}>
+                Carregando histórico...
+              </Text>
+            </View>
           ) : movements.length === 0 ? (
-            <Text style={[styles.emptyHistoryText, { color: COLORS.grey }]}>
-              Nenhuma movimentação registrada
-            </Text>
+            <View style={styles.emptyHistoryContainer}>
+              <MaterialIcons name="insights" size={40} color={COLORS.lightGrey} />
+              <Text style={[styles.emptyHistoryText, { color: COLORS.textSecondary }]}>
+                Nenhuma movimentação registrada
+              </Text>
+            </View>
           ) : (
-            movements.map((movement, index) => (
-              <View key={index} style={[
-                styles.movementItem,
-                movement.tipo === 'entrada' ? styles.entryItemBorder : styles.exitItemBorder,
-                { backgroundColor: COLORS.ultraLightGrey }
-              ]}>
-                <View style={styles.movementHeader}>
-                  <Text style={[
-                    styles.movementType,
-                    movement.tipo === 'entrada' ? { color: COLORS.success } : { color: COLORS.error }
-                  ]}>
-                    {movement.tipo === 'entrada' ? 'ENTRADA' : 'SAÍDA'}
-                  </Text>
-                  <Text style={[styles.movementDate, { color: COLORS.grey }]}>
-                    {formatDateTime(movement.data_movimentacao || new Date().toISOString())}
-                  </Text>
-                </View>
+            <View style={styles.movementsContainer}>
+              {movements.map((movement, index) => {
+                // Use existing animation or create new one
+                const itemAnim = index < historyItemAnims.length 
+                  ? historyItemAnims[index] 
+                  : new Animated.Value(1);
                 
-                <View style={styles.movementDetails}>
-                  <Text style={[
-                    styles.movementQuantity,
-                    movement.tipo === 'entrada' ? { color: COLORS.success } : { color: COLORS.error }
-                  ]}>
-                    {movement.tipo === 'entrada' ? '+' : '-'}{movement.quantidade} unidades
-                  </Text>
-                  {movement.notas && (
-                    <Text style={[styles.movementNotes, { color: COLORS.grey }]}>
-                      Obs: {movement.notas}
-                    </Text>
-                  )}
-                </View>
-              </View>
-            ))
+                return (
+                  <Animated.View 
+                    key={index} 
+                    style={{
+                      opacity: itemAnim,
+                      transform: [{ 
+                        translateX: itemAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [movement.tipo === 'entrada' ? -50 : 50, 0]
+                        }) 
+                      }]
+                    }}
+                  >
+                    <View style={[
+                      styles.movementItem,
+                      { backgroundColor: COLORS.ultraLightGrey }
+                    ]}>
+                      <View style={[
+                        styles.movementTypeIndicator, 
+                        { 
+                          backgroundColor: movement.tipo === 'entrada' ? 
+                            COLORS.success : COLORS.error 
+                        }
+                      ]}>
+                        <MaterialIcons 
+                          name={movement.tipo === 'entrada' ? "arrow-downward" : "arrow-upward"} 
+                          size={16} 
+                          color="#FFFFFF" 
+                        />
+                      </View>
+                      
+                      <View style={styles.movementContent}>
+                        <View style={styles.movementHeader}>
+                          <Text style={[
+                            styles.movementTypeText,
+                            { 
+                              color: movement.tipo === 'entrada' ? 
+                                COLORS.success : COLORS.error 
+                            }
+                          ]}>
+                            {movement.tipo === 'entrada' ? 'ENTRADA' : 'SAÍDA'}
+                          </Text>
+                          <Text style={[styles.movementDate, { color: COLORS.textSecondary }]}>
+                            {formatDateTime(movement.data_movimentacao || new Date().toISOString())}
+                          </Text>
+                        </View>
+                        
+                        <View style={styles.movementDetails}>
+                          <View style={styles.quantityBadge}>
+                            <Text style={styles.quantityBadgeText}>
+                              {movement.quantidade} un
+                            </Text>
+                          </View>
+                          
+                          {movement.notas && (
+                            <View style={styles.movementNotes}>
+                              <MaterialIcons name="note" size={14} color={COLORS.textSecondary} />
+                              <Text style={[styles.movementNotesText, { color: COLORS.textSecondary }]}>
+                                {movement.notas}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+                    </View>
+                  </Animated.View>
+                );
+              })}
+            </View>
           )}
         </Animated.View>
         
+        {/* Botão de exclusão */}
         <Animated.View style={{
           opacity: fadeAnim,
-          transform: [
-            { translateY: slideAnim }
-          ]
+          transform: [{ translateY: slideAnim }]
         }}>
           <TouchableOpacity 
             style={[styles.deleteButton, { backgroundColor: COLORS.error }]}
@@ -700,7 +1036,10 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
             {deleting ? (
               <ActivityIndicator size="small" color="white" />
             ) : (
-              <Text style={styles.deleteButtonText}>Excluir Produto</Text>
+              <View style={styles.buttonContent}>
+                <MaterialIcons name="delete" size={18} color="#FFFFFF" />
+                <Text style={styles.deleteButtonText}>Excluir Produto</Text>
+              </View>
             )}
           </TouchableOpacity>
         </Animated.View>
@@ -742,45 +1081,68 @@ export default function ProductDetailScreen({ route, navigation }: ProductDetail
               end={{ x: 1, y: 0 }}
               style={styles.modalHeader}
             >
+              <MaterialIcons 
+                name={movementType === 'entrada' ? "arrow-downward" : "arrow-upward"} 
+                size={22} 
+                color="#FFFFFF" 
+              />
               <Text style={styles.modalTitle}>
                 {movementType === 'entrada' ? 'Registrar Entrada' : 'Registrar Saída'}
               </Text>
             </LinearGradient>
             
             <View style={styles.modalBody}>
-              <Text style={[styles.modalLabel, { color: COLORS.text }]}>Quantidade:</Text>
-              <TextInput
-                style={[
-                  styles.modalInput,
-                  { 
-                    backgroundColor: COLORS.ultraLightGrey,
-                    borderColor: COLORS.lightGrey,
-                    color: COLORS.text
-                  }
-                ]}
-                value={movementQuantity}
-                onChangeText={setMovementQuantity}
-                keyboardType="numeric"
-                placeholder="Quantidade"
-              />
+              <View style={styles.productInfoInModal}>
+                <Text style={[styles.productNameInModal, { color: COLORS.text }]}>
+                  {produto.nome}
+                </Text>
+                <Text style={[styles.productCodeInModal, { color: COLORS.primary }]}>
+                  {produto.codigo}
+                </Text>
+              </View>
               
-              <Text style={[styles.modalLabel, { color: COLORS.text }]}>Observações (opcional):</Text>
-              <TextInput
-                style={[
-                  styles.modalInput, 
-                  styles.modalTextArea,
-                  { 
-                    backgroundColor: COLORS.ultraLightGrey,
-                    borderColor: COLORS.lightGrey,
-                    color: COLORS.text
-                  }
-                ]}
-                value={movementNotes}
-                onChangeText={setMovementNotes}
-                placeholder="Observações sobre esta movimentação"
-                multiline
-                numberOfLines={3}
-              />
+              <View style={styles.inputGroup}>
+                <Text style={[styles.modalLabel, { color: COLORS.text }]}>Quantidade:</Text>
+                <View style={styles.modalQuantityInput}>
+                  <TextInput
+                    style={[
+                      styles.modalInput,
+                      { 
+                        backgroundColor: COLORS.ultraLightGrey,
+                        borderColor: COLORS.lightGrey,
+                        color: COLORS.text
+                      }
+                    ]}
+                    value={movementQuantity}
+                    onChangeText={setMovementQuantity}
+                    keyboardType="numeric"
+                    placeholder="Quantidade"
+                    placeholderTextColor={COLORS.grey}
+                  />
+                  <Text style={[styles.unitText, { color: COLORS.textSecondary }]}>unidades</Text>
+                </View>
+              </View>
+              
+              <View style={styles.inputGroup}>
+                <Text style={[styles.modalLabel, { color: COLORS.text }]}>Observações (opcional):</Text>
+                <TextInput
+                  style={[
+                    styles.modalInput, 
+                    styles.modalTextArea,
+                    { 
+                      backgroundColor: COLORS.ultraLightGrey,
+                      borderColor: COLORS.lightGrey,
+                      color: COLORS.text
+                    }
+                  ]}
+                  value={movementNotes}
+                  onChangeText={setMovementNotes}
+                  placeholder="Observações sobre esta movimentação"
+                  placeholderTextColor={COLORS.grey}
+                  multiline
+                  numberOfLines={3}
+                />
+              </View>
               
               <View style={styles.modalButtons}>
                 <TouchableOpacity 
@@ -833,6 +1195,7 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 30,
   },
+  // Main card styles
   card: {
     borderRadius: 16,
     padding: 18,
@@ -840,187 +1203,124 @@ const styles = StyleSheet.create({
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 5 },
+        shadowOffset: { width: 0, height: 3 },
         shadowOpacity: 0.1,
-        shadowRadius: 8,
+        shadowRadius: 5,
       },
       android: {
-        elevation: 4,
+        elevation: 3,
       },
     }),
   },
-  headerRow: {
+  productHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 15,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
   },
   codeContainer: {
-    flex: 1,
-  },
-  codeLabel: {
-    fontSize: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   codeValue: {
     fontSize: 16,
     fontWeight: 'bold',
+    marginLeft: 6,
   },
   editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 15,
+    paddingHorizontal: 12,
     borderRadius: 20,
   },
   cancelButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 15,
+    paddingHorizontal: 12,
     borderRadius: 20,
   },
   editButtonText: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '500',
+    marginLeft: 4,
   },
   cancelButtonText: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '500',
+    marginLeft: 4,
+  },
+  productName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 12,
+  },
+  divider: {
+    height: 1,
+    marginVertical: 15,
+  },
+  infoSection: {
+    marginTop: 5,
+  },
+  infoRow: {
+    marginBottom: 12,
+  },
+  infoLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  infoText: {
+    fontSize: 14,
+    marginLeft: 6,
+  },
+  infoValue: {
+    fontSize: 15,
+    fontWeight: '500',
+    paddingLeft: 22,
+  },
+  updatedAt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    justifyContent: 'flex-end',
+  },
+  updatedAtText: {
+    fontSize: 12,
+    marginLeft: 4,
+    fontStyle: 'italic',
+  },
+  // Edit mode styles
+  editContainer: {
+    marginTop: 10,
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  formRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   label: {
     fontSize: 14,
-    marginTop: 10,
-  },
-  value: {
-    fontSize: 16,
-    marginTop: 5,
-    marginBottom: 10,
-  },
-  stockSection: {
-    marginTop: 20,
-    padding: 15,
-    borderRadius: 16,
-  },
-  stockTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 15,
-    textAlign: 'center',
-  },
-  quantityControl: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quantityButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
-  },
-  disabledButton: {
-    opacity: 0.5,
-  },
-  quantityButtonText: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  quantityValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginHorizontal: 20,
-    minWidth: 40,
-    textAlign: 'center',
-  },
-  buttonsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-  },
-  actionButton: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 25,
-    alignItems: 'center',
-    marginHorizontal: 5,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
-  },
-  entryButton: {
-    backgroundColor: '#2E7D32',
-  },
-  exitButton: {
-    backgroundColor: '#C62828',
-  },
-  actionButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  deleteButton: {
-    padding: 15,
-    borderRadius: 25,
-    alignItems: 'center',
-    marginVertical: 10,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
-  },
-  deleteButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  // Styles for edit mode
-  editContainer: {
-    marginTop: 10,
+    marginBottom: 6,
   },
   input: {
     borderRadius: 12,
     padding: 12,
     fontSize: 16,
     borderWidth: 1,
-    marginTop: 5,
-    marginBottom: 15,
   },
   textArea: {
     minHeight: 100,
     textAlignVertical: 'top',
   },
   saveButton: {
-    padding: 15,
-    borderRadius: 25,
+    padding: 14,
+    borderRadius: 12,
     alignItems: 'center',
     marginTop: 10,
     ...Platform.select({
@@ -1039,8 +1339,176 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
+    marginLeft: 8,
   },
-  // Styles for history
+  confirmSaveMessage: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 15,
+  },
+  confirmSaveText: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 8,
+  },
+  // Stock card styles
+  stockCard: {
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.1,
+        shadowRadius: 5,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  stockHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  stockTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  stockStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  stockStatusIndicator: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  stockStatusInfo: {
+    flex: 1,
+  },
+  stockStatusText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  minQuantityText: {
+    fontSize: 14,
+  },
+  quantityControlContainer: {
+    padding: 16,
+    borderRadius: 12,
+    marginVertical: 10,
+  },
+  quantityDisplay: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  quantityLabel: {
+    fontSize: 16,
+    marginBottom: 8,
+  },
+  quantityValue: {
+    fontSize: 36,
+    fontWeight: 'bold',
+  },
+  quantityControl: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quantityButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  disabledButton: {
+    opacity: 0.5,
+  },
+  movementButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+  },
+  movementButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 12,
+    marginHorizontal: 6,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  movementButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginLeft: 6,
+  },
+  // AI button styles
+  aiButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  aiButtonIcon: {
+    fontSize: 20,
+    marginRight: 10,
+  },
+  aiButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // History card styles
   historyCard: {
     borderRadius: 16,
     padding: 18,
@@ -1048,69 +1516,142 @@ const styles = StyleSheet.create({
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 5 },
+        shadowOffset: { width: 0, height: 3 },
         shadowOpacity: 0.1,
-        shadowRadius: 8,
+        shadowRadius: 5,
       },
       android: {
-        elevation: 4,
+        elevation: 3,
       },
     }),
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   historyTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 15,
-    textAlign: 'center',
+    marginLeft: 8,
   },
-  historyLoader: {
-    marginVertical: 20,
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 30,
+  },
+  loadingText: {
+    fontSize: 14,
+    marginTop: 12,
+  },
+  emptyHistoryContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 30,
   },
   emptyHistoryText: {
-    textAlign: 'center',
     fontSize: 14,
-    marginVertical: 20,
-    fontStyle: 'italic',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  movementsContainer: {
+    marginTop: 10,
   },
   movementItem: {
-    borderLeftWidth: 4,
-    paddingLeft: 14,
-    paddingVertical: 12,
-    paddingRight: 8,
-    marginBottom: 16,
-    borderRadius: 10,
+    flexDirection: 'row',
+    borderRadius: 12,
+    marginBottom: 12,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
-  entryItemBorder: {
-    borderLeftColor: '#2E7D32',
+  movementTypeIndicator: {
+    width: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  exitItemBorder: {
-    borderLeftColor: '#C62828',
+  movementContent: {
+    flex: 1,
+    padding: 12,
   },
   movementHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 5,
+    alignItems: 'center',
+    marginBottom: 6,
   },
-  movementType: {
-    fontWeight: 'bold',
+  movementTypeText: {
     fontSize: 14,
+    fontWeight: 'bold',
   },
   movementDate: {
     fontSize: 12,
   },
   movementDetails: {
-    marginTop: 5,
+    marginTop: 4,
   },
-  movementQuantity: {
-    fontSize: 15,
+  quantityBadge: {
+    backgroundColor: 'rgba(0,0,0,0.08)',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  quantityBadgeText: {
+    fontSize: 12,
     fontWeight: '500',
   },
   movementNotes: {
-    fontSize: 14,
-    marginTop: 5,
-    fontStyle: 'italic',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 8,
   },
-  // Styles for modal
+  movementNotesText: {
+    fontSize: 12,
+    marginLeft: 4,
+    flex: 1,
+  },
+  // Delete button styles
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 10,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  deleteButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Modal styles
   modalContainer: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -1118,8 +1659,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    borderRadius: 20,
-    width: '85%',
+    borderRadius: 16,
+    width: '90%',
     maxWidth: 400,
     overflow: 'hidden',
     ...Platform.select({
@@ -1135,28 +1676,53 @@ const styles = StyleSheet.create({
     }),
   },
   modalHeader: {
-    padding: 16,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#FFFFFF',
+    marginLeft: 8,
   },
   modalBody: {
     padding: 20,
+  },
+  productInfoInModal: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    paddingBottom: 16,
+    marginBottom: 16,
+  },
+  productNameInModal: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  productCodeInModal: {
+    fontSize: 14,
   },
   modalLabel: {
     fontSize: 16,
     marginBottom: 8,
     fontWeight: '500',
   },
+  modalQuantityInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   modalInput: {
+    flex: 1,
     borderRadius: 12,
     padding: 12,
     fontSize: 16,
     borderWidth: 1,
-    marginBottom: 16,
+  },
+  unitText: {
+    marginLeft: 8,
+    fontSize: 14,
   },
   modalTextArea: {
     minHeight: 80,
@@ -1165,19 +1731,19 @@ const styles = StyleSheet.create({
   modalButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 10,
+    marginTop: 20,
   },
   modalCancelButton: {
     flex: 1,
     padding: 14,
-    borderRadius: 25,
+    borderRadius: 12,
     alignItems: 'center',
     marginRight: 10,
   },
   modalConfirmButton: {
-    flex: 1.5,
+    flex: 2,
     padding: 14,
-    borderRadius: 25,
+    borderRadius: 12,
     alignItems: 'center',
   },
   modalCancelButtonText: {
@@ -1186,36 +1752,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   modalConfirmButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  // Estilos para o botão de IA
-  aiButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
-    borderRadius: 25,
-    marginBottom: 16,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
-  },
-  aiButtonIcon: {
-    fontSize: 18,
-    marginRight: 10,
-    color: '#FFFFFF',
-  },
-  aiButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
